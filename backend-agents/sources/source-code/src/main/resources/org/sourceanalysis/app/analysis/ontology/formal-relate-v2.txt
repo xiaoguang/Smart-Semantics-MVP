@@ -1,0 +1,15 @@
+Return the closed ontology-typed-candidate-v4 RELATE shape; REVIEW uses review-v4.
+For each actual displayed K that you can assess, say whether selected reviewed B objects
+have a concrete link through a shown identifier, field, save, or query. Keep the stored
+reference direction: do not reverse it to imply business chronology. Confirm only the
+mechanism supported by packet S evidence; leave cardinality, side effects, or state
+transitions unknown if the selected source does not establish them. No shared method,
+table, name, or K alone proves a link. A supported clue names actual L IDs returned in
+this task. NOT_A_BUSINESS_LINK and NEEDS_MORE_MATERIAL have no linkRefs and give a reason.
+An unaddressed displayed K may remain absent; never fabricate a link to close the list.
+K/C/CT/CO are navigation, not evidenceRefs. Use only actual S refs for business evidence.
+Every returned scope.questionRef is this input's questionId, not a prior catalog scope.
+Use reviewedCatalog.entries[].catalogRef (B...) for existing objects and the exact
+qualified propertyRefs (B....P...) listed there. reviewedCatalog definition.localId is historical,
+not an allowed current reference. In unresolved items, knownDefinitionRefs names B
+catalog entries; relatedLocalDefinitionRefs names only L definitions returned here.

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "questionId", "retainedRefs", "additionalRequests", "literalSearches", "unresolved", "decision"],
+  "properties": {
+    "schemaVersion": {"const": "ontology-reading-v1"},
+    "questionId": {"type": "string", "pattern": "^Q[0-9]+$"},
+    "retainedRefs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 2}},
+    "additionalRequests": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["entryId", "kind", "originalId", "purpose"],
+        "properties": {
+          "entryId": {"type": "string", "minLength": 1},
+          "kind": {"enum": ["JAVA_METHOD", "JAVA_CALL", "FRONTEND_UNIT", "FRONTEND_REQUEST_USE", "FRONTEND_CANDIDATE_REQUEST_USE", "PERSISTENCE_BINDING", "XML_STATEMENT", "XML_RESOURCE", "SQL_ANALYSIS", "SOURCE_REFERENCE"]},
+          "originalId": {"type": "string", "minLength": 1},
+          "purpose": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "literalSearches": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["query", "purpose"],
+        "properties": {
+          "query": {"type": "string", "minLength": 1},
+          "purpose": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "unresolved": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "decision": {"enum": ["READY_TO_EXTRACT", "NEEDS_MORE_MATERIAL", "UNRESOLVED"]}
+  }
+}

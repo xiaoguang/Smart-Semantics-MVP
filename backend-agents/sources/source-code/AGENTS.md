@@ -165,6 +165,17 @@
   split, ActivityUse/process contracts and deterministic process publication.
   Its target/current labels are mandatory: none of its unimplemented target
   outputs may be described as already delivered.
+- docs/modules/ontology-recognition/ owns the new independent Ontology design
+  branch under repository-knowledge. Its implementation delta is
+  docs/plans/ontology-recognition-implementation-plan.md. Only the new R4
+  entry-evidence-v1 family or the approved versioned entry-evidence-v2 family
+  with a PREPARED_V1 source basis and optional same-R0
+  verified text is admitted. Do not adapt M10, old Packets, Activities, process
+  catalogs/results, or old model records to this branch. Shared Agent, run,
+  canonical store and Provider foundations may be reused. This is not approval
+  to delete old results or run unapproved model batches. Formal implementation
+  is now authorized by the ten-task implementation plan; live acceptance still
+  requires its separately named allowance.
 - Step07 and docs/modules/business-process-discovery/ own implemented system
   assessment, focused reading, DRAFT -> WRITE -> final RULE_REVIEW, private
   three-stage saving and producer v4 publication. Active supplements are
@@ -175,12 +186,12 @@
 ## Current technical route and retirement boundary
 
 - Current production is JDT LS navigation plus the JDT Core syntax helper,
-  optional MyBatis/JSqlParser material, and Step05 reading packets. JavaParser,
+  optional MyBatis/JSqlParser material, and Step05 per-entry R4 evidence. JavaParser,
   five-graph/Fact/Proof/Flow/Capsule/M10 producers are retired, not enhancements
   to re-enable. Preserve only demonstrably needed historical readers, DTOs,
   schemas and generic artifact observation; audit unused typed readers before
   deleting their dedicated tests.
-- The current four-operation target is owned by
+- The implemented four-operation technical route is owned by
   docs/modules/technical-analysis/ and
   docs/plans/technical-analysis-cli-and-vue-cleanup-design.md.
   Existing three-command production and fixed-source results are real; their
@@ -256,13 +267,18 @@
   ActivityExplainer. The saved 326 reviewed Activities remain reusable. New
   material ownership is Step05; M10 is not newly installed and the existing
   Activity consumer is not executed in this scope.
-- Step 07 exposes exactly two deep internal Interfaces:
+- The existing Step07 business-process branch exposes two deep internal Interfaces:
   BusinessProcessDiscovery and BusinessProcessPublisher. Discovery owns the
   FrozenAnalysisCorpus, RepositoryBusinessCataloger,
   ProcessMaterialAssembler, CandidateProcessReconstructor and
   RepositoryProcessConsolidator internals. Publication owns the deterministic
   repository process catalog, coverage and business-processes.md. Do not expose
   those internals as new public Agent methods.
+- The new Ontology branch has its own Corpus, Recognition, Linker, Validator
+  and Publisher responsibilities, not ActivityUse/processResult contracts.
+  Formalize the approved O0–O3 path by reusing the existing experimental parts;
+  do not create parallel execution/storage frameworks or compatibility adapters
+  to old analysis content. No ninth analysis step.
 - Step08 has no production generator or new generation objective. Preserve
   historical reader, artifact query and deterministic renderer.
 - These are internal Modules behind the sole RepositoryAnalysisAgent public

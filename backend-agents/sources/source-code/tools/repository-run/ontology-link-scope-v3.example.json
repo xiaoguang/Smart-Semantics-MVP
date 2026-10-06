@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "ontology-scope-v3",
+  "purpose": "SKELETON",
+  "mode": "QUESTION",
+  "selectionMode": "EXPLICIT",
+  "questions": [
+    {
+      "questionId": "saved-reference-connection",
+      "question": "What business endpoint objects and connection mechanisms are supported by this saved technical anchor and its complete associated material? Preserve unknowns.",
+      "entryRefs": ["E1"],
+      "clueRefs": ["K1"],
+      "objectSources": [],
+      "tasks": [
+        {
+          "taskId": "joint-link",
+          "taskKind": "LINK",
+          "readingMode": "TECHNICAL_BUNDLE",
+          "unitUses": [],
+          "requiredUnitUses": [],
+          "anchorRefs": ["K1"]
+        }
+      ]
+    }
+  ]
+}

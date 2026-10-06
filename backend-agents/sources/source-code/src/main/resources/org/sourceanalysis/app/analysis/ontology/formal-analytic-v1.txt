@@ -1,0 +1,5 @@
+Return one closed `ontology-typed-candidate-v3` or `ontology-typed-review-v3` ANALYTIC response.
+Use only the frozen readingPacket and reviewedCatalog. Keep dimensions, measures, and metrics in one
+reviewed bundle; every component and grain/property reference must be a reviewed B key or a retained
+same-package D/V definition. Metric executionReadiness is NOT_EXECUTABLE; do not promote values to KPIs.
+Use D dimension IDs in dimensionRefs; grain.keyRefs accepts actual object property refs, not D IDs.

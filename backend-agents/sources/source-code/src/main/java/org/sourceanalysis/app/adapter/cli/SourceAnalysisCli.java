@@ -9,6 +9,8 @@ import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
 import org.sourceanalysis.app.RepositoryAnalysisAgent;
+import org.sourceanalysis.app.adapter.provider.StructuredModelProvider;
+import org.sourceanalysis.app.analysis.ontology.OntologyTypedTaskRunner;
 import org.sourceanalysis.app.artifact.AnalysisRunId;
 import org.sourceanalysis.app.artifact.ArtifactId;
 import org.sourceanalysis.app.capture.localgit.LocalGitCaptureRequestTemplate;
@@ -99,6 +101,22 @@ public final class SourceAnalysisCli {
    * Executes the one configured process entry point used by the packaged {@code source-analysis}.
    */
   public static int executeConfigured(String[] arguments, PrintWriter output, PrintWriter errors) {
+    return executeConfigured(arguments, output, errors, null);
+  }
+
+  /**
+   * Package-private test transport seam for the same configured dispatcher.
+   *
+   * <p>Only the ontology composition branch consumes this factory, and only after its persisted
+   * source, scope, selection, and request-envelope admission succeeds. The public process entry
+   * retains the three-argument overload above.
+   */
+  static int executeConfigured(
+      String[] arguments,
+      PrintWriter output,
+      PrintWriter errors,
+      Function<OntologyTypedTaskRunner.FormalModelDeclaration, StructuredModelProvider>
+          ontologyProviderFactory) {
     Objects.requireNonNull(arguments, "arguments");
     Objects.requireNonNull(output, "output");
     Objects.requireNonNull(errors, "errors");
@@ -106,6 +124,16 @@ public final class SourceAnalysisCli {
       ConfiguredArguments configured = ConfiguredArguments.parse(arguments);
       if ("plan-materials".equals(configured.operation())) {
         throw new IllegalArgumentException("configured operation is unsupported");
+      }
+      if (OntologyAnalysisConfiguredRuntime.isOntologyOperation(configured.operation())
+          || OntologyAnalysisConfiguredRuntime.handles(configured.config())) {
+        return OntologyAnalysisConfiguredRuntime.execute(
+            configured.config(),
+            configured.operation(),
+            configured.options(),
+            output,
+            errors,
+            ontologyProviderFactory);
       }
       if (TechnicalAnalysisConfiguredRuntime.isTechnicalOperation(configured.operation())) {
         return TechnicalAnalysisConfiguredRuntime.execute(
@@ -346,7 +374,8 @@ public final class SourceAnalysisCli {
       name = "source-analysis",
       mixinStandardHelpOptions = true,
       description =
-          "Capture a local commit, execute the final configured target, inspect, render, or read a safe business output.")
+          "Capture a local commit, execute the final configured target, inspect, render, or read a"
+              + " safe business output.")
   private static final class CommandHandler implements Callable<Integer> {
     @Parameters(
         index = "0",
@@ -412,7 +441,8 @@ public final class SourceAnalysisCli {
         default ->
             throw new CommandLine.ParameterException(
                 new CommandLine(this),
-                "operation must be capture-local-git, start, execute-step, inspect, render, or artifact");
+                "operation must be capture-local-git, start, execute-step, inspect, render, or"
+                    + " artifact");
       };
     }
 

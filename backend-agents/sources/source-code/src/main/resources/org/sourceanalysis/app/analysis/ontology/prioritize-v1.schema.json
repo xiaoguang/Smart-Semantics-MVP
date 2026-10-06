@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "selectedQuestions", "deferredQuestions", "unresolved"],
+  "properties": {
+    "schemaVersion": {"const": "ontology-prioritize-v1"},
+    "selectedQuestions": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["pageOffset", "questionId", "purpose", "taskKinds"],
+        "properties": {
+          "pageOffset": {"type": "integer", "minimum": 0},
+          "questionId": {"type": "string", "pattern": "^Q[0-9]+$"},
+          "purpose": {"type": "string", "minLength": 1},
+          "taskKinds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["OBJECT", "ACTION", "ANALYTIC", "RELATE"]}}
+        }
+      }
+    },
+    "deferredQuestions": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["pageOffset", "questionId", "reason"],
+        "properties": {
+          "pageOffset": {"type": "integer", "minimum": 0},
+          "questionId": {"type": "string", "pattern": "^Q[0-9]+$"},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "unresolved": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  }
+}

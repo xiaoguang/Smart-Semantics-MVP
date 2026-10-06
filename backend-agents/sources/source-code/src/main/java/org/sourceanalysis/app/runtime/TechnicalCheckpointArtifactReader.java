@@ -54,10 +54,9 @@ public final class TechnicalCheckpointArtifactReader implements CompletedTechnic
     }
     TechnicalRunOutput technical = output.technicalOutput();
     boolean entryEvidence = isEntryEvidence(technicalArtifactQueryKey);
-    if ((technicalArtifactQueryKey == TechnicalArtifactQueryKey.ENTRY_EVIDENCE
+    if ((requiresEntryId(technicalArtifactQueryKey)
             && (entryId == null || !entryId.matches("entry:[0-9a-f]{64}")))
-        || (technicalArtifactQueryKey != TechnicalArtifactQueryKey.ENTRY_EVIDENCE
-            && entryId != null)) {
+        || (!requiresEntryId(technicalArtifactQueryKey) && entryId != null)) {
       throw invalid();
     }
     if (entryEvidence
@@ -66,15 +65,21 @@ public final class TechnicalCheckpointArtifactReader implements CompletedTechnic
             || technical.readingMaterials() == null)) {
       throw invalid();
     }
+    EntryEvidenceReader reader = new EntryEvidenceReader(modules, analysisSteps);
     EntryEvidenceReader.EntryDocument selectedEntry =
-        technicalArtifactQueryKey == TechnicalArtifactQueryKey.ENTRY_EVIDENCE
-            ? new EntryEvidenceReader(modules, analysisSteps)
-                .read(technical.readingMaterials(), entryId)
+        requiresEntryId(technicalArtifactQueryKey)
+            ? (isEntryEvidenceV2(technicalArtifactQueryKey)
+                ? reader.readV2(technical.readingMaterials(), entryId)
+                : reader.read(technical.readingMaterials(), entryId))
             : null;
     if (entryEvidence && selectedEntry == null) {
       // Index and coverage queries still fresh-reopen the complete closure before exposing one
       // member, rather than trusting a filename from the command line.
-      new EntryEvidenceReader(modules, analysisSteps).reopen(technical.readingMaterials());
+      if (isEntryEvidenceV2(technicalArtifactQueryKey)) {
+        reader.reopenV2(technical.readingMaterials());
+      } else {
+        reader.reopen(technical.readingMaterials());
+      }
     }
     List<VerifiedCanonicalPayload> payloads = payloads(technical, technicalArtifactQueryKey);
     String requiredFile =
@@ -141,7 +146,21 @@ public final class TechnicalCheckpointArtifactReader implements CompletedTechnic
   private static boolean isEntryEvidence(TechnicalArtifactQueryKey key) {
     return key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE_INDEX
         || key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE
-        || key == TechnicalArtifactQueryKey.FRONTEND_EVIDENCE_COVERAGE;
+        || key == TechnicalArtifactQueryKey.FRONTEND_EVIDENCE_COVERAGE
+        || key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE_INDEX_V2
+        || key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE_V2
+        || key == TechnicalArtifactQueryKey.FRONTEND_EVIDENCE_COVERAGE_V2;
+  }
+
+  private static boolean isEntryEvidenceV2(TechnicalArtifactQueryKey key) {
+    return key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE_INDEX_V2
+        || key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE_V2
+        || key == TechnicalArtifactQueryKey.FRONTEND_EVIDENCE_COVERAGE_V2;
+  }
+
+  private static boolean requiresEntryId(TechnicalArtifactQueryKey key) {
+    return key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE
+        || key == TechnicalArtifactQueryKey.ENTRY_EVIDENCE_V2;
   }
 
   private List<VerifiedCanonicalPayload> modulePayloads(

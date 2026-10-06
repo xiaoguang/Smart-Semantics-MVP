@@ -49,8 +49,10 @@ public final class FrontendHttpIndexModulePublisher {
   public static final String ARTIFACT_TYPE = "APPLICATION_DISCOVERY_FRONTEND_HTTP_INDEX";
   public static final String SCHEMA_VERSION = "frontend-http-index-v1";
   public static final String V2_SCHEMA_VERSION = "frontend-http-index-v2";
+  public static final String V3_SCHEMA_VERSION = "frontend-http-index-v3";
   private static final String MODULE_VERSION = "v1";
   private static final String V2_MODULE_VERSION = "v2";
+  private static final String V3_MODULE_VERSION = "v3";
   private static final Set<String> RECORD_TYPES =
       Set.of(
           "HEADER",
@@ -79,7 +81,7 @@ public final class FrontendHttpIndexModulePublisher {
       ArtifactControls r1Controls,
       FrontendHttpIndex index) {
     return publish(
-        module6R1, r0Basis, r1Controls, index, SCHEMA_VERSION, MODULE_VERSION, true, false);
+        module6R1, r0Basis, r1Controls, index, SCHEMA_VERSION, MODULE_VERSION, true, false, false);
   }
 
   /** Installs the independent R1 index without v1's backend-derived {@code ENTRY_LINK} records. */
@@ -89,7 +91,33 @@ public final class FrontendHttpIndexModulePublisher {
       ArtifactControls r1Controls,
       FrontendHttpIndex index) {
     return publish(
-        module6R1, r0Basis, r1Controls, index, V2_SCHEMA_VERSION, V2_MODULE_VERSION, false, true);
+        module6R1,
+        r0Basis,
+        r1Controls,
+        index,
+        V2_SCHEMA_VERSION,
+        V2_MODULE_VERSION,
+        false,
+        true,
+        false);
+  }
+
+  /** Installs the independent v3 index with finite page-instance context observations. */
+  public ModulePublicationReference publishV3(
+      AnalysisStepModuleAddress module6R1,
+      SelectedSourceBasis r0Basis,
+      ArtifactControls r1Controls,
+      FrontendHttpIndex index) {
+    return publish(
+        module6R1,
+        r0Basis,
+        r1Controls,
+        index,
+        V3_SCHEMA_VERSION,
+        V3_MODULE_VERSION,
+        false,
+        true,
+        true);
   }
 
   private ModulePublicationReference publish(
@@ -100,7 +128,8 @@ public final class FrontendHttpIndexModulePublisher {
       String schemaVersion,
       String moduleVersion,
       boolean includeEntryLinks,
-      boolean includeSupportingSourceUnits) {
+      boolean includeSupportingSourceUnits,
+      boolean includePageContexts) {
     try {
       requireDestination(module6R1);
       Objects.requireNonNull(r0Basis, "R0 source basis");
@@ -114,16 +143,23 @@ public final class FrontendHttpIndexModulePublisher {
               index,
               schemaVersion,
               includeEntryLinks,
-              includeSupportingSourceUnits);
-      if (!parse(
+              includeSupportingSourceUnits,
+              includePageContexts);
+      FrontendHttpIndex reopened =
+          parse(
               payload.canonicalUtf8(),
               module6R1,
               r0Basis,
               r1Controls,
               schemaVersion,
               includeEntryLinks,
-              includeSupportingSourceUnits)
-          .equals(includeEntryLinks ? index : withoutEntryLinks(index))) {
+              includeSupportingSourceUnits,
+              includePageContexts);
+      FrontendHttpIndex expected = includeEntryLinks ? index : withoutEntryLinks(index);
+      if (includePageContexts) {
+        expected = withoutPageContextBackedSupportingUnits(expected);
+      }
+      if (!reopened.equals(expected)) {
         throw invalid();
       }
       var installed =
@@ -161,6 +197,7 @@ public final class FrontendHttpIndexModulePublisher {
         SCHEMA_VERSION,
         MODULE_VERSION,
         true,
+        false,
         false);
   }
 
@@ -178,6 +215,25 @@ public final class FrontendHttpIndexModulePublisher {
         V2_SCHEMA_VERSION,
         V2_MODULE_VERSION,
         false,
+        true,
+        false);
+  }
+
+  /** Reopens only the v3 index and restores its page-instance context records exactly. */
+  public FrontendHttpIndex reopenV3(
+      ModulePublicationReference reference,
+      AnalysisRunId expectedR1,
+      SelectedSourceBasis expectedR0Basis,
+      ArtifactControls expectedR1Controls) {
+    return reopen(
+        reference,
+        expectedR1,
+        expectedR0Basis,
+        expectedR1Controls,
+        V3_SCHEMA_VERSION,
+        V3_MODULE_VERSION,
+        false,
+        true,
         true);
   }
 
@@ -189,7 +245,8 @@ public final class FrontendHttpIndexModulePublisher {
       String schemaVersion,
       String moduleVersion,
       boolean includeEntryLinks,
-      boolean includeSupportingSourceUnits) {
+      boolean includeSupportingSourceUnits,
+      boolean includePageContexts) {
     try {
       Objects.requireNonNull(reference, "frontend HTTP index publication");
       Objects.requireNonNull(expectedR1, "expected R1 run");
@@ -223,7 +280,8 @@ public final class FrontendHttpIndexModulePublisher {
           expectedR1Controls,
           schemaVersion,
           includeEntryLinks,
-          includeSupportingSourceUnits);
+          includeSupportingSourceUnits,
+          includePageContexts);
     } catch (FrontendHttpDiscoveryException failure) {
       throw failure;
     } catch (RuntimeException failure) {
@@ -238,10 +296,18 @@ public final class FrontendHttpIndexModulePublisher {
       FrontendHttpIndex index,
       String schemaVersion,
       boolean includeEntryLinks,
-      boolean includeSupportingSourceUnits) {
+      boolean includeSupportingSourceUnits,
+      boolean includePageContexts) {
     StringBuilder content = new StringBuilder();
     for (RecordLine record :
-        records(address, basis, controls, index, includeEntryLinks, includeSupportingSourceUnits)) {
+        records(
+            address,
+            basis,
+            controls,
+            index,
+            includeEntryLinks,
+            includeSupportingSourceUnits,
+            includePageContexts)) {
       ObjectNode line = MAPPER.createObjectNode();
       line.put("schemaVersion", schemaVersion);
       line.put("recordType", record.type());
@@ -283,8 +349,9 @@ public final class FrontendHttpIndexModulePublisher {
       ArtifactControls controls,
       FrontendHttpIndex index,
       boolean includeEntryLinks,
-      boolean includeSupportingSourceUnits) {
-    validateIndex(index, includeEntryLinks, includeSupportingSourceUnits);
+      boolean includeSupportingSourceUnits,
+      boolean includePageContexts) {
+    validateIndex(index, includeEntryLinks, includeSupportingSourceUnits, includePageContexts);
     List<RecordLine> records = new ArrayList<>();
     ObjectNode header = MAPPER.createObjectNode();
     header.set("moduleAddress", addressNode(address));
@@ -299,7 +366,7 @@ public final class FrontendHttpIndexModulePublisher {
     for (FrontendConfigurationFileRecord file : index.configurationFiles()) {
       records.add(new RecordLine("CONFIGURATION_FILE", file.path(), MAPPER.valueToTree(file)));
     }
-    for (SourceUnit unit : sourceUnits(index, includeSupportingSourceUnits)) {
+    for (SourceUnit unit : sourceUnits(index, includeSupportingSourceUnits, includePageContexts)) {
       records.add(new RecordLine("SOURCE_UNIT", unit.key(), unit.node()));
     }
     for (ComponentUse use : componentUses(index)) {
@@ -311,6 +378,12 @@ public final class FrontendHttpIndexModulePublisher {
     if (includeEntryLinks) {
       for (FrontendEntryLinkRecord link : index.entryLinks()) {
         records.add(new RecordLine("ENTRY_LINK", link.requestId(), MAPPER.valueToTree(link)));
+      }
+    }
+    if (includePageContexts) {
+      for (FrontendPageContext context : index.pageContexts()) {
+        records.add(
+            new RecordLine("PAGE_CONTEXT", context.contextId(), MAPPER.valueToTree(context)));
       }
     }
     for (int indexPosition = 0; indexPosition < index.diagnostics().size(); indexPosition++) {
@@ -330,8 +403,9 @@ public final class FrontendHttpIndexModulePublisher {
       ArtifactControls expectedControls,
       String schemaVersion,
       boolean includeEntryLinks,
-      boolean includeSupportingSourceUnits) {
-    List<RecordLine> lines = lines(bytes, schemaVersion, includeEntryLinks);
+      boolean includeSupportingSourceUnits,
+      boolean includePageContexts) {
+    List<RecordLine> lines = lines(bytes, schemaVersion, includeEntryLinks, includePageContexts);
     RecordLine header = only(lines, "HEADER");
     requireHeader(header.payload(), expectedAddress, expectedBasis, expectedControls);
     List<FrontendSourceFileDisposition> files =
@@ -344,8 +418,10 @@ public final class FrontendHttpIndexModulePublisher {
         includeEntryLinks ? typed(lines, "ENTRY_LINK", FrontendEntryLinkRecord.class) : List.of();
     List<FrontendDiagnosticRecord> diagnostics =
         typed(lines, "DIAGNOSTIC", FrontendDiagnosticRecord.class);
+    List<FrontendPageContext> pageContexts =
+        includePageContexts ? typed(lines, "PAGE_CONTEXT", FrontendPageContext.class) : List.of();
     List<FrontendSupportingSourceUnit> supportingSourceUnits =
-        supportingSourceUnits(lines, requests, includeSupportingSourceUnits);
+        supportingSourceUnits(lines, requests, pageContexts, includeSupportingSourceUnits);
     FrontendHttpIndex result =
         new FrontendHttpIndex(
             files,
@@ -354,14 +430,18 @@ public final class FrontendHttpIndexModulePublisher {
             diagnostics,
             status(header.payload()),
             configurationFiles,
-            supportingSourceUnits);
-    validateIndex(result, includeEntryLinks, includeSupportingSourceUnits);
-    requireDerivedRecords(lines, result, includeSupportingSourceUnits);
+            supportingSourceUnits,
+            pageContexts);
+    validateIndex(result, includeEntryLinks, includeSupportingSourceUnits, includePageContexts);
+    requireDerivedRecords(lines, result, includeSupportingSourceUnits, includePageContexts);
     return result;
   }
 
   private List<RecordLine> lines(
-      ImmutableBytes bytes, String schemaVersion, boolean includeEntryLinks) {
+      ImmutableBytes bytes,
+      String schemaVersion,
+      boolean includeEntryLinks,
+      boolean includePageContexts) {
     String content = strictUtf8(bytes.copyToByteArray());
     if (content.isEmpty() || !content.endsWith("\n")) {
       throw invalid();
@@ -383,7 +463,7 @@ public final class FrontendHttpIndexModulePublisher {
       String type = text(line, "recordType");
       String key = text(line, "key");
       if (!schemaVersion.equals(text(line, "schemaVersion"))
-          || !recordTypes(includeEntryLinks).contains(type)
+          || !recordTypes(includeEntryLinks, includePageContexts).contains(type)
           || !(line.get("payload") instanceof ObjectNode payload)
           || !identities.add(type + "\u0000" + key)) {
         throw invalid();
@@ -415,11 +495,14 @@ public final class FrontendHttpIndexModulePublisher {
   }
 
   private static void requireDerivedRecords(
-      List<RecordLine> lines, FrontendHttpIndex index, boolean includeSupportingSourceUnits) {
+      List<RecordLine> lines,
+      FrontendHttpIndex index,
+      boolean includeSupportingSourceUnits,
+      boolean includePageContexts) {
     List<RecordLine> actualUnits =
         lines.stream().filter(line -> line.type().equals("SOURCE_UNIT")).toList();
     List<RecordLine> expectedUnits =
-        sourceUnits(index, includeSupportingSourceUnits).stream()
+        sourceUnits(index, includeSupportingSourceUnits, includePageContexts).stream()
             .map(unit -> new RecordLine("SOURCE_UNIT", unit.key(), unit.node()))
             .toList();
     List<RecordLine> actualUses =
@@ -434,7 +517,10 @@ public final class FrontendHttpIndexModulePublisher {
   }
 
   private static void validateIndex(
-      FrontendHttpIndex index, boolean includeEntryLinks, boolean includeSupportingSourceUnits) {
+      FrontendHttpIndex index,
+      boolean includeEntryLinks,
+      boolean includeSupportingSourceUnits,
+      boolean includePageContexts) {
     Map<String, String> files = new HashMap<>();
     for (FrontendSourceFileDisposition file : index.files()) {
       if (files.put(file.path(), file.sourceSha256()) != null) {
@@ -478,6 +564,9 @@ public final class FrontendHttpIndexModulePublisher {
     if (!includeSupportingSourceUnits && !index.supportingSourceUnits().isEmpty()) {
       throw invalid();
     }
+    if (!includePageContexts && !index.pageContexts().isEmpty()) {
+      throw invalid();
+    }
     Map<String, SourceUnit> wrapperUnits = sourceUnitMap(index.requests());
     Set<String> supportingUnitKeys = new HashSet<>();
     for (FrontendSupportingSourceUnit supportingUnit : index.supportingSourceUnits()) {
@@ -495,10 +584,27 @@ public final class FrontendHttpIndexModulePublisher {
         throw invalid();
       }
     }
+    Set<String> contextIds = new HashSet<>();
+    for (FrontendPageContext context : index.pageContexts()) {
+      if (!contextIds.add(context.contextId())
+          || !context.sourceSha256().equals(files.get(context.pagePath()))) {
+        throw invalid();
+      }
+      for (FrontendPageSourceUnit unit : context.sourceUnits()) {
+        if (!unit.sourceSha256().equals(files.get(unit.sourcePath()))) {
+          throw invalid();
+        }
+      }
+      for (String requestId : context.requestIds()) {
+        if (!requestIds.contains(requestId)) {
+          throw invalid();
+        }
+      }
+    }
   }
 
   private static List<SourceUnit> sourceUnits(
-      FrontendHttpIndex index, boolean includeSupportingSourceUnits) {
+      FrontendHttpIndex index, boolean includeSupportingSourceUnits, boolean includePageContexts) {
     Map<String, SourceUnit> units = sourceUnitMap(index.requests());
     if (includeSupportingSourceUnits) {
       for (FrontendSupportingSourceUnit supportingUnit : index.supportingSourceUnits()) {
@@ -509,7 +615,24 @@ public final class FrontendHttpIndexModulePublisher {
         }
       }
     }
-    return List.copyOf(units.values());
+    if (includePageContexts) {
+      for (FrontendPageContext context : index.pageContexts()) {
+        for (FrontendPageSourceUnit pageUnit : context.sourceUnits()) {
+          SourceUnit unit = SourceUnit.from(pageUnit);
+          SourceUnit previous = units.putIfAbsent(unit.key(), unit);
+          if (previous != null && !previous.equals(unit)) {
+            throw invalid();
+          }
+        }
+      }
+    }
+    List<SourceUnit> result = List.copyOf(units.values());
+    // V3 may reclassify a persisted unit from generic supporting evidence to a page-context
+    // dependency while reopening. Canonicalize only that new wire version so the same complete
+    // unit set has one record order; historical v1/v2 bytes retain their insertion order.
+    return includePageContexts
+        ? result.stream().sorted(java.util.Comparator.comparing(SourceUnit::key)).toList()
+        : result;
   }
 
   private static Map<String, SourceUnit> sourceUnitMap(List<FrontendHttpRequestRecord> requests) {
@@ -529,8 +652,10 @@ public final class FrontendHttpIndexModulePublisher {
   private static List<FrontendSupportingSourceUnit> supportingSourceUnits(
       List<RecordLine> lines,
       List<FrontendHttpRequestRecord> requests,
+      List<FrontendPageContext> pageContexts,
       boolean includeSupportingSourceUnits) {
     Map<String, SourceUnit> wrapperUnits = sourceUnitMap(requests);
+    Map<String, SourceUnit> pageContextUnits = pageContextSourceUnitMap(pageContexts);
     Map<String, FrontendSupportingSourceUnit> supportingUnits = new LinkedHashMap<>();
     for (RecordLine line : lines) {
       if (!line.type().equals("SOURCE_UNIT")) {
@@ -544,6 +669,13 @@ public final class FrontendHttpIndexModulePublisher {
       SourceUnit wrapper = wrapperUnits.get(sourceUnit.key());
       if (wrapper != null) {
         if (!wrapper.equals(sourceUnit)) {
+          throw invalid();
+        }
+        continue;
+      }
+      SourceUnit pageContextUnit = pageContextUnits.get(sourceUnit.key());
+      if (pageContextUnit != null) {
+        if (!pageContextUnit.equals(sourceUnit)) {
           throw invalid();
         }
         continue;
@@ -580,6 +712,21 @@ public final class FrontendHttpIndexModulePublisher {
       }
     }
     return List.copyOf(uses);
+  }
+
+  private static Map<String, SourceUnit> pageContextSourceUnitMap(
+      List<FrontendPageContext> contexts) {
+    Map<String, SourceUnit> units = new LinkedHashMap<>();
+    for (FrontendPageContext context : contexts) {
+      for (FrontendPageSourceUnit pageUnit : context.sourceUnits()) {
+        SourceUnit unit = SourceUnit.from(pageUnit);
+        SourceUnit previous = units.putIfAbsent(unit.key(), unit);
+        if (previous != null && !previous.equals(unit)) {
+          throw invalid();
+        }
+      }
+    }
+    return units;
   }
 
   private static List<ArtifactReference> upstream(
@@ -752,12 +899,10 @@ public final class FrontendHttpIndexModulePublisher {
     }
   }
 
-  private static Set<String> recordTypes(boolean includeEntryLinks) {
-    if (includeEntryLinks) {
-      return RECORD_TYPES;
-    }
+  private static Set<String> recordTypes(boolean includeEntryLinks, boolean includePageContexts) {
     Set<String> types = new HashSet<>(RECORD_TYPES);
-    types.remove("ENTRY_LINK");
+    if (!includeEntryLinks) types.remove("ENTRY_LINK");
+    if (includePageContexts) types.add("PAGE_CONTEXT");
     return Set.copyOf(types);
   }
 
@@ -769,7 +914,36 @@ public final class FrontendHttpIndexModulePublisher {
         index.diagnostics(),
         index.status(),
         index.configurationFiles(),
-        index.supportingSourceUnits());
+        index.supportingSourceUnits(),
+        index.pageContexts());
+  }
+
+  /**
+   * The v3 source-unit ledger stores one physical unit when it is both generic supporting evidence
+   * and a page-context dependency. The context retains its complete identity; the reopened generic
+   * supporting list therefore excludes that duplicate representation.
+   */
+  private static FrontendHttpIndex withoutPageContextBackedSupportingUnits(
+      FrontendHttpIndex index) {
+    Set<String> pageContextUnitKeys = new HashSet<>();
+    for (FrontendPageContext context : index.pageContexts()) {
+      for (FrontendPageSourceUnit unit : context.sourceUnits()) {
+        pageContextUnitKeys.add(SourceUnit.from(unit).key());
+      }
+    }
+    List<FrontendSupportingSourceUnit> supporting =
+        index.supportingSourceUnits().stream()
+            .filter(unit -> !pageContextUnitKeys.contains(SourceUnit.from(unit).key()))
+            .toList();
+    return new FrontendHttpIndex(
+        index.files(),
+        index.requests(),
+        index.entryLinks(),
+        index.diagnostics(),
+        index.status(),
+        index.configurationFiles(),
+        supporting,
+        index.pageContexts());
   }
 
   private static void requireFields(ObjectNode node, Set<String> expected) {
@@ -882,6 +1056,26 @@ public final class FrontendHttpIndexModulePublisher {
               + range.lengthUtf16()
               + ":"
               + supportingUnit.sourceUnitKind().name();
+      return new SourceUnit(key, payload);
+    }
+
+    private static SourceUnit from(FrontendPageSourceUnit pageUnit) {
+      ObjectNode payload = MAPPER.createObjectNode();
+      payload.put("sourcePath", pageUnit.sourcePath());
+      payload.put("sourceSha256", pageUnit.sourceSha256());
+      payload.set("sourceUnitRange", MAPPER.valueToTree(pageUnit.sourceUnitRange()));
+      payload.put("sourceUnitKind", pageUnit.sourceUnitKind().name());
+      SourceRange range = pageUnit.sourceUnitRange();
+      String key =
+          pageUnit.sourcePath()
+              + "@"
+              + pageUnit.sourceSha256()
+              + ":"
+              + range.startOffsetUtf16()
+              + ":"
+              + range.lengthUtf16()
+              + ":"
+              + pageUnit.sourceUnitKind().name();
       return new SourceUnit(key, payload);
     }
   }

@@ -1,0 +1,51 @@
+# Copy this file outside the source tree and replace every /absolute/... placeholder.
+# It declares one ontology-config-v1 run environment; loading it does not authenticate or start a model.
+schemaVersion: ontology-config-v1
+storage:
+  root: /absolute/path/to/ontology/run-store
+  preparedSourceArchive: /absolute/path/to/prepared-source-archive
+  sourcePreparationPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/source-preparation-artifact-policy-set-v1.json
+  evidencePolicyRegistry: /absolute/path/to/source-code/tools/repository-run/technical-analysis-artifact-policy-set-v3.json
+  ontologyPolicyRegistry: /absolute/path/to/source-code/tools/repository-run/ontology-artifact-policy-set-v3.json
+  # List exact historical ontology or technical owners needed by selected saved runs.
+  # R2 and R4 can have different owners; list R2's original registry when O0 needs it.
+  # Missing/duplicate matching owner identities are refused; do not edit their saved registries.
+  upstreamArtifactPolicyRegistries:
+    - /absolute/path/to/source-code/tools/repository-run/ontology-artifact-policy-set-v1.json
+    - /absolute/path/to/source-code/tools/repository-run/ontology-artifact-policy-set-v2.json
+reading:
+  maxUnitBytes: 1048576
+  maxRequestBytes: 1048576
+  maxOutputBytes: 262144
+  maxOutputTokens: 4096
+  # This is the actual request allowance for one O1 or O2 run. It is not an account
+  # authorization, a reusable cross-run quota, or permission to begin a model request.
+  maxRequests: 12
+  maxReadingRounds: 4
+  maxActionsPerRound: 8
+  maxNavigationEntries: 100
+# Omit schemaSources to keep O0 DDL-disabled, or name verified R0-relative source files, for example:
+# schemaSources:
+#   - schema/observed-definition.sql
+# The eight independent Prompt keys use the built-in formal resources unless individually overridden
+# with absolute UTF-8 text files. Supported override keys are survey, prioritize, reading, object,
+# action, analytic, relate, and review; a Prompt path never supplies an ontology answer.
+# prompts:
+#   object: /absolute/path/to/object.prompt.txt
+modelJobs:
+  maxConcurrentJobs: 1
+  providers:
+    luna:
+      kind: codexSubscription
+      executable: /absolute/path/to/codex
+      quotaScope: example-ontology-chatgpt-account
+      model: gpt-5.6-luna
+      reasoningEffort: high
+      auth:
+        mode: chatgpt
+        # Name only: set this environment variable to an existing Codex home before an authorized run.
+        codexHomeEnv: CODEX_HOME
+  routing:
+    survey: [luna]
+    extract: [luna]
+    relate: [luna]

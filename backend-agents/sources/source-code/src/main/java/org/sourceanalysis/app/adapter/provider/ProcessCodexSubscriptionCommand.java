@@ -1,7 +1,7 @@
 package org.sourceanalysis.app.adapter.provider;
 
 import java.io.IOException;
-import java.io.OutputStream;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -48,15 +48,44 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
   @Override
   public ImmutableBytes execute(
       CodexSubscriptionProfile profile, String prompt, ImmutableBytes outputJsonSchema) {
+    return executeInternal(profile, prompt, outputJsonSchema, null);
+  }
+
+  @Override
+  public ImmutableBytes execute(
+      CodexSubscriptionProfile profile,
+      String prompt,
+      ImmutableBytes outputJsonSchema,
+      int maxResponseBytes) {
+    if (maxResponseBytes < 1) {
+      throw new IllegalArgumentException("maximum response bytes must be positive");
+    }
+    return executeInternal(profile, prompt, outputJsonSchema, maxResponseBytes);
+  }
+
+  private ImmutableBytes executeInternal(
+      CodexSubscriptionProfile profile,
+      String prompt,
+      ImmutableBytes outputJsonSchema,
+      Integer maxResponseBytes) {
+    long deadlineNanos = deadlineNanos(profile);
     Path temporaryDirectory = null;
     Process process = null;
     try {
       temporaryDirectory = Files.createTempDirectory("source-analysis-codex-");
       Path schema = temporaryDirectory.resolve("response-schema.json");
+      Path promptInput = temporaryDirectory.resolve("prompt.txt");
       Path output = temporaryDirectory.resolve("response.json");
       Path standardOutput = temporaryDirectory.resolve("stdout.txt");
       Path standardError = temporaryDirectory.resolve("stderr.txt");
       Files.write(schema, outputJsonSchema.copyToByteArray());
+      if (remainingNanos(deadlineNanos) <= 0) {
+        throw deadlineFailure(null);
+      }
+      Files.writeString(promptInput, prompt, StandardCharsets.UTF_8);
+      if (remainingNanos(deadlineNanos) <= 0) {
+        throw deadlineFailure(null);
+      }
       ProcessBuilder processBuilder =
           new ProcessBuilder(
                   List.of(
@@ -78,22 +107,18 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
                       output.toString(),
                       "-"))
               .directory(temporaryDirectory.toFile())
+              .redirectInput(promptInput.toFile())
               .redirectOutput(standardOutput.toFile())
               .redirectError(standardError.toFile());
       isolateSubscriptionAuthentication(processBuilder, profile);
-      process = processBuilder.start();
-      try (OutputStream stdin = process.getOutputStream()) {
-        stdin.write(prompt.getBytes(StandardCharsets.UTF_8));
+      if (remainingNanos(deadlineNanos) <= 0) {
+        throw deadlineFailure(null);
       }
-      if (!process.waitFor(
-          profile.timeout().toMillis(), java.util.concurrent.TimeUnit.MILLISECONDS)) {
-        boolean ended = terminateAndConfirm(process);
-        throw new StructuredModelProviderFailure(
-            ended ? "REQUEST_TIMEOUT" : "OUTCOME_UNKNOWN",
-            true,
-            ended,
-            "CODEX_SUBSCRIPTION_TIMEOUT",
-            null);
+      process = processBuilder.start();
+      long remainingNanos = remainingNanos(deadlineNanos);
+      if (remainingNanos <= 0
+          || !process.waitFor(remainingNanos, java.util.concurrent.TimeUnit.NANOSECONDS)) {
+        throw deadlineFailure(process);
       }
       if (process.exitValue() != 0 || !Files.isRegularFile(output)) {
         String category =
@@ -108,7 +133,9 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
             null,
             privateFailureBytes(output, standardOutput, standardError));
       }
-      return ImmutableBytes.copyOf(Files.readAllBytes(output));
+      return maxResponseBytes == null
+          ? ImmutableBytes.copyOf(Files.readAllBytes(output))
+          : readBoundedResponse(output, maxResponseBytes, deadlineNanos, process);
     } catch (IOException | InterruptedException failure) {
       if (failure instanceof InterruptedException) {
         Thread.currentThread().interrupt();
@@ -126,6 +153,28 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
     }
   }
 
+  private static long deadlineNanos(CodexSubscriptionProfile profile) {
+    return Math.addExact(System.nanoTime(), profile.timeout().toNanos());
+  }
+
+  private static long remainingNanos(long deadlineNanos) {
+    return deadlineNanos - System.nanoTime();
+  }
+
+  private static StructuredModelProviderFailure deadlineFailure(Process process) {
+    if (process == null) {
+      return new StructuredModelProviderFailure(
+          "UNKNOWN", false, false, "CODEX_SUBSCRIPTION_TIMEOUT", null);
+    }
+    boolean ended = terminateAndConfirm(process);
+    return new StructuredModelProviderFailure(
+        ended ? "REQUEST_TIMEOUT" : "OUTCOME_UNKNOWN",
+        true,
+        ended,
+        "CODEX_SUBSCRIPTION_TIMEOUT",
+        null);
+  }
+
   private static boolean terminateAndConfirm(Process process) {
     if (!process.isAlive()) {
       return true;
@@ -137,6 +186,44 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
       Thread.currentThread().interrupt();
       return !process.isAlive();
     }
+  }
+
+  private static ImmutableBytes readBoundedResponse(
+      Path output, int maxResponseBytes, long deadlineNanos, Process process) throws IOException {
+    requireRemainingDeadline(deadlineNanos, process);
+    long declaredSize = Files.size(output);
+    if (declaredSize > maxResponseBytes) {
+      throw responseBudgetFailure();
+    }
+    byte[] response = new byte[Math.toIntExact(declaredSize)];
+    try (InputStream input = Files.newInputStream(output)) {
+      int offset = 0;
+      while (offset < response.length) {
+        requireRemainingDeadline(deadlineNanos, process);
+        int read = input.read(response, offset, response.length - offset);
+        if (read < 0) {
+          throw new IOException("structured response ended before its declared size");
+        }
+        offset += read;
+      }
+      requireRemainingDeadline(deadlineNanos, process);
+      if (input.read() != -1) {
+        throw responseBudgetFailure();
+      }
+    }
+    requireRemainingDeadline(deadlineNanos, process);
+    return ImmutableBytes.copyOf(response);
+  }
+
+  private static void requireRemainingDeadline(long deadlineNanos, Process process) {
+    if (remainingNanos(deadlineNanos) <= 0) {
+      throw deadlineFailure(process);
+    }
+  }
+
+  private static StructuredModelProviderFailure responseBudgetFailure() {
+    return new StructuredModelProviderFailure(
+        "RESPONSE_BUDGET_EXCEEDED", true, true, "CODEX_SUBSCRIPTION_RESPONSE_TOO_LARGE", null);
   }
 
   private static void isolateSubscriptionAuthentication(
@@ -159,6 +246,7 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
     try {
       Files.deleteIfExists(directory.resolve("response.json"));
       Files.deleteIfExists(directory.resolve("response-schema.json"));
+      Files.deleteIfExists(directory.resolve("prompt.txt"));
       Files.deleteIfExists(directory.resolve("stdout.txt"));
       Files.deleteIfExists(directory.resolve("stderr.txt"));
       Files.deleteIfExists(directory);
@@ -189,8 +277,8 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
     if (actualResponse.length > 0) {
       return ImmutableBytes.copyOf(actualResponse);
     }
-    byte[] stdout = readAtMostBytes(standardOutput);
-    byte[] stderr = readAtMostBytes(standardError);
+    byte[] stdout = readLastAtMostBytes(standardOutput);
+    byte[] stderr = readLastAtMostBytes(standardError);
     byte[] diagnostic = new byte[stdout.length + 1 + stderr.length];
     System.arraycopy(stdout, 0, diagnostic, 0, stdout.length);
     diagnostic[stdout.length] = '\n';
@@ -207,6 +295,18 @@ final class ProcessCodexSubscriptionCommand implements CodexSubscriptionCommand 
       return new byte[0];
     }
     try (var input = Files.newInputStream(file)) {
+      return input.readNBytes(4_096);
+    } catch (IOException ignored) {
+      return new byte[0];
+    }
+  }
+
+  private static byte[] readLastAtMostBytes(Path file) {
+    if (file == null) {
+      return new byte[0];
+    }
+    try (var input = Files.newInputStream(file)) {
+      input.skipNBytes(Math.max(0, Files.size(file) - 4_096));
       return input.readNBytes(4_096);
     } catch (IOException ignored) {
       return new byte[0];

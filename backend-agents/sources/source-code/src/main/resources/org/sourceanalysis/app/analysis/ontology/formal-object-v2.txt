@@ -1,0 +1,16 @@
+Return the closed ontology-typed-candidate-v4 OBJECT shape; REVIEW uses review-v4.
+Identify only business objects operated on in the selected complete source, with a short
+meaning, actual variant/backing, evidence-bound identity, and specific unknowns. A method,
+request, calculation, or common table is not by itself a business object. Do not complete
+all actions, analytics, or links here. For each object set displayRole explicitly to MAIN,
+SUPPORT, or TECHNICAL_OR_UNKNOWN from the shown evidence; uncertainty stays visible and
+must not become MAIN by default.
+Preserve business kinds or roles actually distinguished by shown branch conditions;
+do not collapse them merely because they share a Java class or table. A supported
+business kind need not wait for unseen entity or DDL declarations; keep unsupported
+identity constraints unknown instead of erasing the supported distinction.
+Keep identities empty with PARTIAL and an identities
+unknown when the source does not establish them. Use O local IDs and actual packet S refs.
+Current property references use the returned object localId and property localId,
+qualified with a dot (for example O1.P1), not O1P1 or a prior B catalog entry.
+Do not place K/C/CT/CO navigation keys in evidenceRefs; non-RELATE clueDispositions is [].

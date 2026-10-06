@@ -149,6 +149,18 @@ function staticDataListUrl(options) {
   return list ? literalString(list.value) : null
 }
 
+function staticDataUrl(options, propertyName) {
+  const data = propertyNamed(options, 'data')
+  if (!data || !data.value || !data.value.body) return null
+  const returns = walkAll(data.value.body, (node) => node.type === 'ReturnStatement', {
+    skipNestedFunctions: true,
+  })
+  if (returns.length !== 1 || returns[0].argument?.type !== 'ObjectExpression') return null
+  const url = propertyNamed(returns[0].argument, 'url')
+  const value = url && propertyNamed(url.value, propertyName)
+  return value ? literalString(value.value) : null
+}
+
 function normalizedComponentTag(name) {
   return name
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
@@ -274,7 +286,7 @@ function componentChildren(file, filesByPath) {
         (attribute.key.name === 'ref' || attribute.key.name?.name === 'ref'),
     )
     const ref = refAttribute?.value?.value
-    if (typeof ref === 'string' && ref.length > 0) uses.push({ ref, child })
+    if (typeof ref === 'string' && ref.length > 0) uses.push({ ref, child, element })
   }
   return uses
 }
@@ -313,7 +325,7 @@ function axiosBaseUrl(requestFile, exportedAxiosName) {
   if (!localServiceName) return null
   const service = localDeclaration(requestFile, localServiceName)
   const serviceDeclaration = localDeclarationStatement(requestFile, localServiceName)
-  if (service?.type !== 'CallExpression' || memberPath(service.callee) !== 'axios.create') return null
+  if (service?.type !== 'CallExpression' || !supportedAxiosCreate(requestFile, service.callee)) return null
   const configuration = service.arguments[0]
   const baseURL = configuration && propertyNamed(configuration, 'baseURL')
   if (!baseURL) return null
@@ -346,6 +358,26 @@ function axiosBaseUrl(requestFile, exportedAxiosName) {
     sourceUnit: serviceDeclaration ?? fileFallbackUnit(requestFile),
     sourceUnitKind: serviceDeclaration ? 'STATIC_DECLARATION' : 'FILE_FALLBACK',
   }
+}
+
+function supportedAxiosCreate(file, callee) {
+  if (memberPath(callee) === 'axios.create') return true
+  if (
+    callee?.type !== 'MemberExpression' ||
+    callee.computed ||
+    callee.property?.type !== 'Identifier' ||
+    callee.property.name !== 'create' ||
+    callee.object?.type !== 'Identifier'
+  ) return false
+  return file.ast.body.some(
+    (statement) =>
+      statement.type === 'ImportDeclaration' &&
+      statement.source.value === 'axios' &&
+      statement.specifiers.some(
+        (specifier) =>
+          specifier.type === 'ImportDefaultSpecifier' && specifier.local.name === callee.object.name,
+      ),
+  )
 }
 
 function getActionPipeline(mixinFile, mixinOptions, mixinMethod, filesByPath) {
@@ -630,6 +662,764 @@ function finiteStaticChains(filesByPath) {
   )
 }
 
+function methodParameters(method, file) {
+  return (method?.params ?? []).map((parameter) => sourceTextAt(file, parameter))
+}
+
+function unitRef(file, node, sourceUnitKind) {
+  return `${file.path}:${sourceUnitKind}:${node.range[0]}:${node.range[1] - node.range[0]}`
+}
+
+function sourceUnit(file, node, sourceUnitKind) {
+  return {
+    unitRef: unitRef(file, node, sourceUnitKind),
+    sourcePath: file.path,
+    sourceHash: file.sourceHash,
+    sourceUnitRange: sourceRange(node),
+    sourceUnitKind,
+  }
+}
+
+function addContextUnit(units, file, node, sourceUnitKind) {
+  const unit = sourceUnit(file, node, sourceUnitKind)
+  if (!units.has(unit.unitRef)) units.set(unit.unitRef, unit)
+  return unit.unitRef
+}
+
+function directiveEvent(attribute) {
+  if (attribute?.type !== 'VAttribute' || !attribute.directive) return null
+  if (attribute.key?.name?.name !== 'on') return null
+  const event = attribute.key.argument
+  return event?.type === 'VIdentifier' && typeof event.name === 'string' ? event.name : null
+}
+
+function templateEventBindings(childUse) {
+  return (childUse.element?.startTag?.attributes ?? [])
+    .map((attribute) => ({ attribute, eventName: directiveEvent(attribute) }))
+    .filter(({ eventName }) => eventName !== null)
+    .map(({ attribute, eventName }) => {
+      const expression = attribute.value?.expression
+      return {
+        eventName,
+        attribute,
+        callbackName: expression?.type === 'Identifier' ? expression.name : null,
+      }
+    })
+    .filter(({ callbackName }) => callbackName !== null)
+}
+
+function componentEmits(component) {
+  const options = defaultExportObject(component)
+  const emits = []
+  for (const [methodName, method] of methodsOf(options)) {
+    const sourceUnit = methodProperty(options, methodName)
+    if (!sourceUnit) continue
+    for (const call of callsInFunction(method)) {
+      if (memberPath(call.callee) !== 'this.$emit') continue
+      const eventName = literalString(call.arguments[0])
+      if (!eventName) continue
+      emits.push({
+        eventName,
+        call,
+        methodName,
+        method,
+        sourceUnit,
+        actualArguments: call.arguments.slice(1).map((argument) => sourceTextAt(component, argument)),
+      })
+    }
+  }
+  return emits
+}
+
+function directReturnCall(statement) {
+  if (!statement) return null
+  if (statement.type === 'ReturnStatement' && statement.argument?.type === 'CallExpression') {
+    return statement.argument
+  }
+  if (statement.type === 'BlockStatement' && statement.body.length === 1) {
+    return directReturnCall(statement.body[0])
+  }
+  return null
+}
+
+function saveActionPipeline(page, call, pageMethodName, pageSourceUnit, filesByPath) {
+  if (call.callee.type !== 'Identifier') return null
+  const imported = page.imports.get(call.callee.name)
+  if (!imported?.targetPath) return null
+  const client = filesByPath.get(imported.targetPath)
+  const saveAction = client && declaredExport(client, imported.importedName)
+  if (!client || !saveAction?.params || saveAction.params.length < 3) return null
+  const httpMethod = literalString(call.arguments[1])
+  if (!httpMethod || !['POST', 'PUT'].includes(httpMethod.toUpperCase())) return null
+  const axiosCall = callsInFunction(saveAction).find(
+    (candidate) =>
+      candidate.callee.type === 'Identifier' &&
+      candidate.arguments[0]?.type === 'ObjectExpression' &&
+      client.imports.get(candidate.callee.name)?.importedName === 'axios',
+  )
+  if (!axiosCall) return null
+  const axiosImport = client.imports.get(axiosCall.callee.name)
+  const requestFile = axiosImport?.targetPath && filesByPath.get(axiosImport.targetPath)
+  if (!requestFile || !declaredExport(requestFile, axiosImport.importedName)) return null
+  const base = axiosBaseUrl(requestFile, axiosImport.importedName)
+  if (!base) return null
+  const urlArgument = call.arguments[0]
+  const urlPath =
+    urlArgument?.type === 'MemberExpression' && memberPath(urlArgument)?.startsWith('this.url.')
+      ? staticDataUrl(defaultExportObject(page), memberPath(urlArgument).slice('this.url.'.length))
+      : null
+  const clientUnit =
+    client.ast.body.find(
+      (statement) =>
+        statement.type === 'ExportNamedDeclaration' && statement.declaration?.type === 'FunctionDeclaration' &&
+        statement.declaration.id?.name === imported.importedName,
+    )?.declaration ?? fileFallbackUnit(client)
+  return {
+    requestId: `${page.path}:${call.range[0]}`,
+    pagePath: page.path,
+    pageSourceHash: page.sourceHash,
+    instanceKey: `${page.path}#default`,
+    sourceRange: sourceRange(call),
+    httpMethod: httpMethod.toUpperCase(),
+    rawUrlExpression: sourceTextAt(page, urlArgument),
+    resolvedPath: urlPath,
+    baseUrlExpression: base.baseUrlExpression,
+    baseUrlStaticFallback: base.baseUrlStaticFallback,
+    wrapperPath: [
+      segment(
+        page,
+        call,
+        pageSourceUnit,
+        'FUNCTION',
+        unitId(page, pageMethodName),
+        unitId(client, imported.importedName),
+      ),
+      segment(
+        client,
+        axiosCall,
+        clientUnit,
+        'FUNCTION',
+        unitId(client, imported.importedName),
+        unitId(requestFile, 'axios'),
+      ),
+      segment(
+        requestFile,
+        base.call,
+        base.sourceUnit,
+        base.sourceUnitKind,
+        unitId(requestFile, 'axios'),
+        'axios',
+      ),
+    ],
+    supportingSourceUnits: [],
+    argumentBindings: argumentBindings(call, saveAction.params, page),
+    _actualArguments: call.arguments.map((argument) => sourceTextAt(page, argument)),
+    _pageMethodName: pageMethodName,
+    _pageSourceUnit: pageSourceUnit,
+    _client: client,
+    _clientUnit: clientUnit,
+  }
+}
+
+function directSaveRequests(page, filesByPath) {
+  const options = defaultExportObject(page)
+  const requests = []
+  for (const [methodName, method] of methodsOf(options)) {
+    const sourceUnit = methodProperty(options, methodName)
+    if (!sourceUnit) continue
+    for (const call of callsInFunction(method)) {
+      const request = saveActionPipeline(page, call, methodName, sourceUnit, filesByPath)
+      if (request) requests.push(request)
+    }
+  }
+  return requests
+}
+
+function templateHandlers(page, eventName) {
+  if (!page.ast.templateBody) return []
+  const handlers = []
+  for (const element of walkAll(page.ast.templateBody, (node) => node.type === 'VElement')) {
+    for (const attribute of element.startTag?.attributes ?? []) {
+      if (directiveEvent(attribute) !== eventName) continue
+      const expression = attribute.value?.expression
+      if (expression?.type === 'Identifier') handlers.push({ attribute, name: expression.name })
+    }
+  }
+  return handlers.sort((left, right) => left.attribute.range[0] - right.attribute.range[0])
+}
+
+function methodCallsThis(functionNode, name) {
+  return callsInFunction(functionNode).filter((call) => memberPath(call.callee) === `this.${name}`)
+}
+
+function variableInitializer(method, variableName) {
+  for (const statement of method.body?.body ?? []) {
+    if (statement.type !== 'VariableDeclaration') continue
+    const declarator = statement.declarations.find(
+      (candidate) => candidate.id?.type === 'Identifier' && candidate.id.name === variableName,
+    )
+    if (declarator?.init) return declarator.init
+  }
+  return null
+}
+
+function branchAssignment(ifStatement, variableName) {
+  const statements = ifStatement?.consequent?.type === 'BlockStatement'
+    ? ifStatement.consequent.body
+    : [ifStatement?.consequent]
+  return statements
+    .map((statement) => {
+      if (
+        statement?.type !== 'ExpressionStatement' ||
+        statement.expression?.type !== 'AssignmentExpression' ||
+        statement.expression.operator !== '=' ||
+        statement.expression.left?.type !== 'Identifier' ||
+        statement.expression.left.name !== variableName
+      ) return null
+      return statement.expression
+    })
+    .find(Boolean) ?? null
+}
+
+function methodReturnCall(method) {
+  const returns = (method?.body?.body ?? []).filter((statement) => statement.type === 'ReturnStatement')
+  return returns.length === 1 ? directReturnCall(returns[0]) : null
+}
+
+function topLevelPromiseActionCall(method) {
+  const calls = (method?.body?.body ?? [])
+    .filter((statement) => statement.type === 'ExpressionStatement')
+    .map((statement) => {
+      let expression = statement.expression
+      let hasThen = false
+      while (
+        expression?.type === 'CallExpression' &&
+        expression.callee?.type === 'MemberExpression' &&
+        !expression.callee.computed &&
+        ['then', 'finally'].includes(expression.callee.property?.name)
+      ) {
+        hasThen ||= expression.callee.property.name === 'then'
+        expression = expression.callee.object
+      }
+      return hasThen && expression?.type === 'CallExpression' && expression.callee.type === 'Identifier'
+        ? expression
+        : null
+    })
+    .filter(Boolean)
+  return calls.length === 1 ? calls[0] : null
+}
+
+function supportedMixinHttpActionCall(method) {
+  return methodReturnCall(method) ?? topLevelPromiseActionCall(method)
+}
+
+function resolvedPageUrl(page, expression) {
+  const member = memberPath(expression)
+  if (!member?.startsWith('this.url.')) return null
+  return staticDataUrl(defaultExportObject(page), member.slice('this.url.'.length))
+}
+
+function exportedFunctionUnit(file, exportedName) {
+  const statement = file.ast.body.find(
+    (candidate) =>
+      candidate.type === 'ExportNamedDeclaration' &&
+      candidate.declaration?.type === 'FunctionDeclaration' &&
+      candidate.declaration.id?.name === exportedName,
+  )
+  return statement?.declaration ?? fileFallbackUnit(file)
+}
+
+function mixinSaveActionRequests(page, mixinTarget, call, trigger, filesByPath) {
+  if (!call || call.callee.type !== 'Identifier') return []
+  if (call !== supportedMixinHttpActionCall(mixinTarget.method)) return []
+  const imported = mixinTarget.mixinFile.imports.get(call.callee.name)
+  if (!imported?.targetPath) return []
+  const client = filesByPath.get(imported.targetPath)
+  const httpAction = client && declaredExport(client, imported.importedName)
+  if (!client || !httpAction?.params || httpAction.params.length !== 3 || call.arguments.length !== 3) return []
+  const [urlArgument, parameterArgument, methodArgument] = call.arguments
+  if (
+    urlArgument?.type !== 'Identifier' ||
+    parameterArgument?.type !== 'Identifier' ||
+    methodArgument?.type !== 'Identifier'
+  ) return []
+  const initialUrl = variableInitializer(mixinTarget.method, urlArgument.name)
+  const initialMethod = variableInitializer(mixinTarget.method, methodArgument.name)
+  const conditions = (mixinTarget.method.body?.body ?? []).filter(
+    (statement) => statement.type === 'IfStatement',
+  )
+  if (!initialUrl || literalString(initialMethod) === null || conditions.length !== 1) return []
+  const condition = conditions[0]
+  if (condition.alternate) return []
+  const branchUrlAssignment = branchAssignment(condition, urlArgument.name)
+  const branchMethodAssignment = branchAssignment(condition, methodArgument.name)
+  if (!branchUrlAssignment || !branchMethodAssignment) return []
+  const relevantAssignments = walkAll(
+    mixinTarget.method.body,
+    (node) =>
+      node.type === 'AssignmentExpression' &&
+      node.operator === '=' &&
+      node.left?.type === 'Identifier' &&
+      (node.left.name === urlArgument.name || node.left.name === methodArgument.name),
+  )
+  if (
+    relevantAssignments.length !== 2 ||
+    relevantAssignments.some(
+      (assignment) => assignment !== branchUrlAssignment && assignment !== branchMethodAssignment,
+    )
+  ) return []
+  const branchUrl = branchUrlAssignment.right
+  const branchMethod = literalString(branchMethodAssignment.right)
+  const defaultPath = resolvedPageUrl(page, initialUrl)
+  const branchPath = resolvedPageUrl(page, branchUrl)
+  if (!defaultPath || !branchPath || !branchMethod) return []
+  const axiosCall = callsInFunction(httpAction).find(
+    (candidate) =>
+      candidate.callee.type === 'Identifier' &&
+      candidate.arguments[0]?.type === 'ObjectExpression' &&
+      client.imports.get(candidate.callee.name)?.importedName === 'axios',
+  )
+  if (!axiosCall) return []
+  const axiosImport = client.imports.get(axiosCall.callee.name)
+  const requestFile = axiosImport?.targetPath && filesByPath.get(axiosImport.targetPath)
+  if (!requestFile || !declaredExport(requestFile, axiosImport.importedName)) return []
+  const base = axiosBaseUrl(requestFile, axiosImport.importedName)
+  if (!base) return []
+  const clientUnit = exportedFunctionUnit(client, imported.importedName)
+  const wrapperPath = [
+    segment(
+      mixinTarget.mixinFile,
+      call,
+      mixinTarget.sourceUnit,
+      'FUNCTION',
+      unitId(mixinTarget.mixinFile, mixinTarget.methodName),
+      unitId(client, imported.importedName),
+    ),
+    segment(
+      client,
+      axiosCall,
+      clientUnit,
+      'FUNCTION',
+      unitId(client, imported.importedName),
+      unitId(requestFile, 'axios'),
+    ),
+    segment(
+      requestFile,
+      base.call,
+      base.sourceUnit,
+      base.sourceUnitKind,
+      unitId(requestFile, 'axios'),
+      'axios',
+    ),
+  ]
+  const request = (resolvedPath, httpMethod, branch) => ({
+    requestId: `${page.path}:${call.range[0]}:${branch}`,
+    pagePath: page.path,
+    pageSourceHash: page.sourceHash,
+    instanceKey: `${page.path}#default`,
+    sourceRange: sourceRange(trigger.attribute),
+    httpMethod,
+    rawUrlExpression: sourceTextAt(mixinTarget.mixinFile, urlArgument),
+    resolvedPath,
+    baseUrlExpression: base.baseUrlExpression,
+    baseUrlStaticFallback: base.baseUrlStaticFallback,
+    wrapperPath,
+    supportingSourceUnits: [],
+    argumentBindings: argumentBindings(call, httpAction.params, mixinTarget.mixinFile),
+    _pageMethodName: null,
+    _pageSourceUnit: null,
+    _client: client,
+    _clientUnit: clientUnit,
+    _mixinRequest: mixinTarget,
+    _wrapperKey: `${mixinTarget.mixinFile.path}:${call.range[0]}`,
+    _condition: {
+      sourceFile: mixinTarget.mixinFile,
+      sourceUnit: mixinTarget.sourceUnit,
+      expression: sourceTextAt(mixinTarget.mixinFile, condition.test),
+      range: sourceRange(condition.test),
+      branch,
+    },
+  })
+  return [
+    request(defaultPath, literalString(initialMethod).toUpperCase(), 'FALSE'),
+    request(branchPath, branchMethod.toUpperCase(), 'TRUE'),
+  ]
+}
+
+function mixinPromiseSaveShapes(page, filesByPath) {
+  const shapes = []
+  const seen = new Set()
+  for (const trigger of templateHandlers(page, 'click')) {
+    const initial = mixinMethodTarget(page, trigger.name, filesByPath)
+    if (!initial) continue
+    const candidates = [initial]
+    for (const call of callsInFunction(initial.method)) {
+      const targetName = memberPath(call.callee)?.startsWith('this.')
+        ? memberPath(call.callee).slice('this.'.length)
+        : null
+      const target = targetName && mixinMethodTarget(page, targetName, filesByPath)
+      if (target) candidates.push(target)
+    }
+    for (const candidate of candidates) {
+      for (const promise of callsInFunction(candidate.method)) {
+        if (
+          promise.callee.type !== 'MemberExpression' ||
+          promise.callee.computed ||
+          promise.callee.property?.name !== 'then' ||
+          promise.arguments[0]?.type !== 'ArrowFunctionExpression'
+        ) continue
+        const callback = promise.arguments[0]
+        const requestCall = callsInFunction(callback).find((call) => {
+          const name = memberPath(call.callee)?.startsWith('this.')
+            ? memberPath(call.callee).slice('this.'.length)
+            : null
+          return name !== null && mixinMethodTarget(page, name, filesByPath) !== null
+        })
+        if (!requestCall) continue
+        const requestName = memberPath(requestCall.callee).slice('this.'.length)
+        const requestTarget = mixinMethodTarget(page, requestName, filesByPath)
+        const requests = mixinSaveActionRequests(page, requestTarget, firstHttpCall(requestTarget), trigger, filesByPath)
+        if (requests.length !== 2) continue
+        const key = `${candidate.mixinFile.path}:${promise.range[0]}:${promise.range[1]}:${requestTarget.method.range[0]}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        const shape = { initial, candidate, promise, callback, requestTarget, requests }
+        for (const request of requests) {
+          request._mixinInitial = initial
+          request._mixinCandidate = candidate
+          request._mixinPromise = promise
+          request._mixinCallback = callback
+        }
+        shapes.push(shape)
+      }
+    }
+  }
+  return shapes
+}
+
+function firstHttpCall(mixinTarget) {
+  return supportedMixinHttpActionCall(mixinTarget.method)
+}
+
+function saveConditions(page, saveRequests) {
+  const explicitConditions = saveRequests
+    .filter((request) => request._condition)
+    .map((request) => ({
+      requestId: request.requestId,
+      sourceFile: request._condition.sourceFile,
+      sourceUnit: request._condition.sourceUnit,
+      expression: request._condition.expression,
+      branch: request._condition.branch,
+      range: request._condition.range,
+    }))
+  const requestsByOffset = new Map(saveRequests.map((request) => [request.sourceRange.startOffsetUtf16, request]))
+  const conditions = [...explicitConditions]
+  const options = defaultExportObject(page)
+  for (const [methodName, method] of methodsOf(options)) {
+    const sourceUnit = methodProperty(options, methodName)
+    if (!sourceUnit || method.body?.type !== 'BlockStatement') continue
+    const statements = method.body.body
+    for (let index = 0; index < statements.length; index += 1) {
+      const statement = statements[index]
+      if (statement.type !== 'IfStatement') continue
+      const trueCall = directReturnCall(statement.consequent)
+      const falseCall = directReturnCall(statement.alternate) ?? directReturnCall(statements[index + 1])
+      const expression = sourceTextAt(page, statement.test)
+      const unit = sourceUnit
+      for (const [call, branch] of [[trueCall, 'TRUE'], [falseCall, 'FALSE']]) {
+        const request = call && requestsByOffset.get(call.range[0])
+        if (!request) continue
+        conditions.push({
+          requestId: request.requestId,
+          methodName,
+          sourceFile: page,
+          sourceUnit: unit,
+          expression,
+          branch,
+          range: sourceRange(statement.test),
+        })
+      }
+    }
+  }
+  return conditions
+}
+
+function promiseCallbacks(page, units) {
+  const options = defaultExportObject(page)
+  const observations = []
+  for (const [methodName, method] of methodsOf(options)) {
+    const parentUnit = methodProperty(options, methodName)
+    if (!parentUnit) continue
+    for (const call of callsInFunction(method)) {
+      if (
+        call.callee.type !== 'MemberExpression' ||
+        call.callee.computed ||
+        call.callee.property?.name !== 'then' ||
+        !['ArrowFunctionExpression', 'FunctionExpression'].includes(call.arguments[0]?.type)
+      ) continue
+      const callback = call.arguments[0]
+      const fromUnitRef = addContextUnit(units, page, parentUnit, 'FUNCTION')
+      const toUnitRef = addContextUnit(units, page, callback, 'FUNCTION')
+      observations.push({
+        observationId: `${page.path}:promise:${call.range[0]}:${call.range[1]}`,
+        kind: 'PROMISE_CALLBACK',
+        fromUnitRef,
+        toUnitRef,
+        callRange: sourceRange(call),
+        eventName: null,
+        actualArguments: [],
+        formalParameters: methodParameters(callback, page),
+        argumentBindings: [],
+        detail: 'literal Promise.then callback',
+      })
+    }
+  }
+  return observations
+}
+
+function directCalls(page, childUse, units) {
+  const options = defaultExportObject(page)
+  const childOptions = defaultExportObject(childUse.child)
+  const childMethods = methodsOf(childOptions)
+  const observations = []
+  for (const [methodName, method] of methodsOf(options)) {
+    const sourceUnit = methodProperty(options, methodName)
+    if (!sourceUnit) continue
+    for (const call of callsInFunction(method)) {
+      const path = memberPath(call.callee)
+      const prefix = `this.$refs.${childUse.ref}.`
+      if (!path?.startsWith(prefix)) continue
+      const targetName = path.slice(prefix.length)
+      const target = childMethods.get(targetName)
+      const targetUnit = methodProperty(childOptions, targetName)
+      if (!target || !targetUnit) continue
+      observations.push({
+        observationId: `${page.path}:direct:${call.range[0]}`,
+        kind: 'DIRECT_CALL',
+        fromUnitRef: addContextUnit(units, page, sourceUnit, 'FUNCTION'),
+        toUnitRef: addContextUnit(units, childUse.child, targetUnit, 'FUNCTION'),
+        callRange: sourceRange(call),
+        eventName: null,
+        actualArguments: call.arguments.map((argument) => sourceTextAt(page, argument)),
+        formalParameters: methodParameters(target, childUse.child),
+        argumentBindings: argumentBindings(call, target.params, page),
+        detail: 'literal component ref method call',
+      })
+    }
+  }
+  return observations
+}
+
+function pageContext(page, childUse, contextRequests, saveRequestList, filesByPath) {
+  const pageOptions = defaultExportObject(page)
+  const pageMethods = methodsOf(pageOptions)
+  const units = new Map()
+  const observations = []
+  const emits = componentEmits(childUse.child)
+  const bindings = templateEventBindings(childUse)
+  for (const binding of bindings) {
+    const callback = pageMethods.get(binding.callbackName)
+    const callbackUnit = methodProperty(pageOptions, binding.callbackName)
+    if (!callback || !callbackUnit) continue
+    const emit = emits.find((candidate) => candidate.eventName === binding.eventName)
+    if (!emit) continue
+    const templateRef = addContextUnit(units, page, childUse.element, 'TEMPLATE')
+    const callbackRef = addContextUnit(units, page, callbackUnit, 'FUNCTION')
+    const emitRef = addContextUnit(units, childUse.child, emit.sourceUnit, 'FUNCTION')
+    const bindingsForCallback = callback.params.map((parameter, parameterIndex) => {
+      const argument = emit.call.arguments[parameterIndex + 1]
+      return argument
+        ? {
+            parameterIndex,
+            parameterName: sourceTextAt(page, parameter),
+            expression: sourceTextAt(childUse.child, argument),
+            disposition: 'PASSED',
+          }
+        : {
+            parameterIndex,
+            parameterName: sourceTextAt(page, parameter),
+            expression: null,
+            disposition: 'NOT_PASSED',
+          }
+    })
+    observations.push(
+      {
+        observationId: `${page.path}:template:${binding.attribute.range[0]}`,
+        kind: 'TEMPLATE_EVENT_BINDING',
+        fromUnitRef: templateRef,
+        toUnitRef: callbackRef,
+        callRange: sourceRange(binding.attribute),
+        eventName: binding.eventName,
+        actualArguments: [],
+        formalParameters: methodParameters(callback, page),
+        argumentBindings: [],
+        detail: 'literal template event binding',
+      },
+      {
+        observationId: `${childUse.child.path}:emit:${emit.call.range[0]}`,
+        kind: 'COMPONENT_EMIT',
+        fromUnitRef: emitRef,
+        toUnitRef: null,
+        callRange: sourceRange(emit.call),
+        eventName: binding.eventName,
+        actualArguments: emit.actualArguments,
+        formalParameters: [],
+        argumentBindings: [],
+        detail: 'literal component emit',
+      },
+      {
+        observationId: `${page.path}:callback:${binding.attribute.range[0]}`,
+        kind: 'EVENT_CALLBACK_BINDING',
+        fromUnitRef: templateRef,
+        toUnitRef: callbackRef,
+        callRange: sourceRange(binding.attribute),
+        eventName: binding.eventName,
+        actualArguments: emit.actualArguments,
+        formalParameters: methodParameters(callback, page),
+        argumentBindings: bindingsForCallback,
+        detail: 'same literal component instance and event',
+      },
+    )
+  }
+  if (observations.length === 0) return null
+  observations.push(...directCalls(page, childUse, units), ...promiseCallbacks(page, units))
+  if (saveRequestList.length > 0) {
+    const data = propertyNamed(pageOptions, 'data')
+    if (data?.value?.body) addContextUnit(units, page, data.value, 'FUNCTION')
+  }
+  const handledMixinWrappers = new Set()
+  for (const save of saveRequestList.filter((request) => request._mixinRequest)) {
+    if (handledMixinWrappers.has(save._wrapperKey)) continue
+    handledMixinWrappers.add(save._wrapperKey)
+    const mixinRequest = save._mixinRequest
+    const initialMixin = save._mixinInitial.mixinFile
+    const promiseMixin = save._mixinCandidate.mixinFile
+    const requestUnit = addContextUnit(units, mixinRequest.mixinFile, mixinRequest.sourceUnit, 'FUNCTION')
+    addContextUnit(units, initialMixin, save._mixinInitial.sourceUnit, 'FUNCTION')
+    const promiseFromUnit = addContextUnit(units, promiseMixin, save._mixinCandidate.sourceUnit, 'FUNCTION')
+    const promiseToUnit = addContextUnit(units, promiseMixin, save._mixinCallback, 'FUNCTION')
+    const clientUnit = addContextUnit(units, save._client, save._clientUnit, 'FUNCTION')
+    const pageOptions = defaultExportObject(page)
+    for (const callbackCall of callsInFunction(save._mixinCallback)) {
+      const targetName = memberPath(callbackCall.callee)?.startsWith('this.')
+        ? memberPath(callbackCall.callee).slice('this.'.length)
+        : null
+      const targetUnit = targetName && methodProperty(pageOptions, targetName)
+      if (targetUnit) addContextUnit(units, page, targetUnit, 'FUNCTION')
+    }
+    observations.push(
+      {
+        observationId: `${promiseMixin.path}:promise:${save._mixinPromise.range[0]}:${save._mixinPromise.range[1]}`,
+        kind: 'PROMISE_CALLBACK',
+        fromUnitRef: promiseFromUnit,
+        toUnitRef: promiseToUnit,
+        callRange: sourceRange(save._mixinPromise),
+        eventName: null,
+        actualArguments: [],
+        formalParameters: methodParameters(save._mixinCallback, promiseMixin),
+        argumentBindings: [],
+        detail: 'literal mixin Promise.then callback',
+      },
+      {
+        observationId: `${mixinRequest.mixinFile.path}:http-wrapper:${save._wrapperKey}`,
+        kind: 'HTTP_WRAPPER_CALL',
+        fromUnitRef: requestUnit,
+        toUnitRef: clientUnit,
+        callRange: save.wrapperPath[0].sourceRange,
+        eventName: null,
+        actualArguments: save.argumentBindings.map((binding) => binding.expression),
+        formalParameters: save.argumentBindings.map((binding) => binding.parameterName),
+        argumentBindings: save.argumentBindings,
+        detail: 'literal imported three-argument HTTP wrapper call',
+      },
+    )
+  }
+  const handledWrappers = new Set()
+  for (const save of saveRequestList) {
+    const wrapperKey = save._wrapperKey ?? save.requestId
+    if (save._mixinRequest || handledWrappers.has(wrapperKey)) continue
+    handledWrappers.add(wrapperKey)
+    observations.push({
+      observationId: `${page.path}:http-wrapper:${save.sourceRange.startOffsetUtf16}`,
+      kind: 'HTTP_WRAPPER_CALL',
+      fromUnitRef: addContextUnit(units, page, save._pageSourceUnit, 'FUNCTION'),
+      toUnitRef: addContextUnit(units, save._client, save._clientUnit, 'FUNCTION'),
+      callRange: save.sourceRange,
+      eventName: null,
+      actualArguments: save._actualArguments,
+      formalParameters: save.argumentBindings.map((binding) => binding.parameterName),
+      argumentBindings: save.argumentBindings,
+      detail: 'literal imported save wrapper call',
+    })
+  }
+  const conditions = saveConditions(page, saveRequestList).map((condition) => ({
+    requestId: condition.requestId,
+    unitRef: addContextUnit(units, condition.sourceFile, condition.sourceUnit, 'FUNCTION'),
+    range: condition.range,
+    expression: condition.expression,
+    branch: condition.branch,
+  }))
+  const requestIds = contextRequests.map((request) => request.requestId).sort()
+  const stable = JSON.stringify({
+    pagePath: page.path,
+    sourceSha256: page.sourceHash,
+    instanceKey: `${page.path}#${childUse.ref}`,
+    requestIds,
+    observations,
+    requestConditions: conditions,
+  })
+  return {
+    context: {
+      contextId: `page-context:${sourceHash(stable)}`,
+      pagePath: page.path,
+      sourceSha256: page.sourceHash,
+      instanceKey: `${page.path}#${childUse.ref}`,
+      requestIds,
+      sourceUnits: [...units.values()],
+      observations,
+      requestConditions: conditions,
+      limitations: [],
+    },
+    requests: contextRequests,
+  }
+}
+
+function finitePageContexts(filesByPath, existingRequests) {
+  const components = [...filesByPath.values()]
+    .filter((file) => file.ast && defaultExportObject(file))
+    .sort((left, right) => left.path.localeCompare(right.path))
+  const childUses = new Map(components.map((component) => [component.path, componentChildren(component, filesByPath)]))
+  const saveRequests = components.flatMap((page) => {
+    if (childUses.get(page.path).length === 0) return []
+    return [...directSaveRequests(page, filesByPath), ...mixinPromiseSaveShapes(page, filesByPath).flatMap((shape) => shape.requests)]
+  })
+  const contexts = []
+  for (const page of components) {
+    for (const childUse of childUses.get(page.path)) {
+      const childInstanceKey = `${page.path}#${childUse.ref}`
+      const pageDefaultInstanceKey = `${page.path}#default`
+      const pageRequests = existingRequests.filter(
+        (request) =>
+          request.instanceKey === childInstanceKey || request.instanceKey === pageDefaultInstanceKey,
+      )
+      const pageSaveRequests = saveRequests.filter((request) => request.pagePath === page.path)
+      const result = pageContext(page, childUse, [...pageRequests, ...pageSaveRequests], pageSaveRequests, filesByPath)
+      if (!result) continue
+      contexts.push(result.context)
+    }
+  }
+  const normalizedRequests = [
+    ...existingRequests,
+    ...saveRequests,
+  ].sort(
+    (left, right) =>
+      left.pagePath.localeCompare(right.pagePath) ||
+      left.sourceRange.startOffsetUtf16 - right.sourceRange.startOffsetUtf16 ||
+      left.requestId.localeCompare(right.requestId),
+  )
+  return { requests: normalizedRequests, contexts }
+}
+
 function validateRequest(request) {
   if (!request || request.schemaVersion !== REQUEST_SCHEMA || !Array.isArray(request.files)) {
     throw new Error('frontend syntax request is invalid')
@@ -685,12 +1475,24 @@ function scan(request) {
   for (const file of files) {
     if (file.ast) file.imports = importsFor(file, aliases, filesByPath)
   }
-  for (const observation of finiteStaticChains(filesByPath)) {
+  const finite = finitePageContexts(filesByPath, finiteStaticChains(filesByPath))
+  for (const observation of finite.requests) {
+    const publicObservation = Object.fromEntries(
+      Object.entries(observation).filter(([name]) => !name.startsWith('_')),
+    )
     records.push({
       schemaVersion: RESPONSE_SCHEMA,
       recordType: 'HTTP_REQUEST',
-      key: observation.requestId,
-      payload: observation,
+      key: publicObservation.requestId,
+      payload: publicObservation,
+    })
+  }
+  for (const context of finite.contexts) {
+    records.push({
+      schemaVersion: RESPONSE_SCHEMA,
+      recordType: 'PAGE_CONTEXT',
+      key: context.contextId,
+      payload: context,
     })
   }
   for (const diagnostic of diagnostics) {

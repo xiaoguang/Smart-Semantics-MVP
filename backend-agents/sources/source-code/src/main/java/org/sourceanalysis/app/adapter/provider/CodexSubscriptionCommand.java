@@ -11,4 +11,16 @@ public interface CodexSubscriptionCommand {
 
   ImmutableBytes execute(
       CodexSubscriptionProfile profile, String prompt, ImmutableBytes outputJsonSchema);
+
+  /**
+   * Formal ontology callers may require a bounded completed response. Existing injectable command
+   * fakes and all legacy callers retain the three-argument behavior.
+   */
+  default ImmutableBytes execute(
+      CodexSubscriptionProfile profile,
+      String prompt,
+      ImmutableBytes outputJsonSchema,
+      int maxResponseBytes) {
+    return execute(profile, prompt, outputJsonSchema);
+  }
 }

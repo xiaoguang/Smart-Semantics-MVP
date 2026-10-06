@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "ontology-scope-v1",
+  "mode": "QUESTION",
+  "selectionMode": "EXPLICIT",
+  "questions": [
+    {
+      "questionId": "Q1",
+      "question": "Which observed technical material establishes the selected object?",
+      "entryRefs": ["E1"],
+      "clueRefs": [],
+      "tasks": [
+        {
+          "taskId": "object-Q1",
+          "taskKind": "OBJECT",
+          "readingMode": "EXPLICIT",
+          "unitUses": [
+            {
+              "unitRef": "U1",
+              "entryRef": "E1"
+            }
+          ],
+          "requiredUnitUses": [
+            {
+              "unitRef": "U1",
+              "entryRef": "E1"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

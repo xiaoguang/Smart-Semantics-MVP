@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "ontology-scope-v2",
+  "purpose": "ENRICHMENT",
+  "mode": "QUESTION",
+  "selectionMode": "EXPLICIT",
+  "questions": [
+    {
+      "questionId": "selected-operations",
+      "question": "Which evidenced operations act on the selected reviewed objects? Preserve unconfirmed conditions and effects as unknown.",
+      "entryRefs": ["E1"],
+      "clueRefs": [],
+      "objectSources": [
+        {
+          "identificationRun": "analysis-run:0000000000000000000000000000000000000000000000000000000000000000",
+          "questionId": "business-objects"
+        }
+      ],
+      "tasks": [
+        {
+          "taskId": "operations",
+          "taskKind": "ACTION",
+          "readingMode": "MODEL",
+          "unitUses": [],
+          "requiredUnitUses": []
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+Return the closed ontology-typed-candidate-v4 ANALYTIC shape; REVIEW uses review-v4.
+For each actual calculation separate identity attributes, filter dimensions, grouping
+dimensions, measures, and combined metrics. Preserve grain, expression, units, time scope,
+post-processing, and unknowns from the selected source. A document ID is not automatically
+a business dimension; a numeric field is not automatically a measure or KPI. Do not
+invent aggregation or executable metric behavior. For ANALYTIC, dimensions use D1/D2,
+measures use V1/V2, and metrics use M1/M2. Metric componentMeasureRefs must name
+current-task V measures returned in this response or an actual reviewedCatalog measure B,
+never an M metric or a historical localId. Do not recreate a valid reviewed measure
+merely to avoid its B reference.
+Use actual reviewed B objects or current-task component refs as the schema requires.
+Evidence is packet S only;
+non-RELATE clueDispositions is [].

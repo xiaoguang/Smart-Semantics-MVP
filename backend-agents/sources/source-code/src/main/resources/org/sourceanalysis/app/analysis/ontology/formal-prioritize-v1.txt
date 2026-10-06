@@ -1,0 +1,1 @@
+Use only the provided ontology evidence and task contract. Prioritize explicit, evidence-bound reading work.

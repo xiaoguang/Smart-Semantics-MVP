@@ -14,16 +14,17 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
   private final CompletedReportRenderer reportRenderer;
   private final CompletedBusinessArtifactReader businessArtifactReader;
   private final CompletedTechnicalArtifactReader technicalArtifactReader;
+  private final CompletedOntologyArtifactReader ontologyArtifactReader;
 
   /** Uses the already-open configured store without accepting or exposing a filesystem path. */
   public LocalRepositoryAnalysisAgent(RunStoreHandle store) {
-    this(store, null, null, null, null);
+    this(store, null, null, null, null, null);
   }
 
   /** Uses an application-owned internal coordinator to execute the final report target. */
   public LocalRepositoryAnalysisAgent(
       RunStoreHandle store, RepositoryAnalysisRunCoordinator coordinator) {
-    this(store, coordinator, null, null, null);
+    this(store, coordinator, null, null, null, null);
   }
 
   /** Uses configured internal execution and read-only report-rendering dependencies. */
@@ -31,7 +32,7 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
       RunStoreHandle store,
       RepositoryAnalysisRunCoordinator coordinator,
       CompletedReportRenderer reportRenderer) {
-    this(store, coordinator, reportRenderer, null, null);
+    this(store, coordinator, reportRenderer, null, null, null);
   }
 
   /** Uses configured internal execution and read-only report/artifact dependencies. */
@@ -40,7 +41,7 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
       RepositoryAnalysisRunCoordinator coordinator,
       CompletedReportRenderer reportRenderer,
       CompletedBusinessArtifactReader businessArtifactReader) {
-    this(store, coordinator, reportRenderer, businessArtifactReader, null);
+    this(store, coordinator, reportRenderer, businessArtifactReader, null, null);
   }
 
   /** Adds a distinct technical artifact reader without changing the business-reader contract. */
@@ -50,11 +51,23 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
       CompletedReportRenderer reportRenderer,
       CompletedBusinessArtifactReader businessArtifactReader,
       CompletedTechnicalArtifactReader technicalArtifactReader) {
+    this(store, coordinator, reportRenderer, businessArtifactReader, technicalArtifactReader, null);
+  }
+
+  /** Adds the separate ontology reader without changing existing reader construction paths. */
+  public LocalRepositoryAnalysisAgent(
+      RunStoreHandle store,
+      RepositoryAnalysisRunCoordinator coordinator,
+      CompletedReportRenderer reportRenderer,
+      CompletedBusinessArtifactReader businessArtifactReader,
+      CompletedTechnicalArtifactReader technicalArtifactReader,
+      CompletedOntologyArtifactReader ontologyArtifactReader) {
     this.store = Objects.requireNonNull(store, "run store");
     this.coordinator = coordinator;
     this.reportRenderer = reportRenderer;
     this.businessArtifactReader = businessArtifactReader;
     this.technicalArtifactReader = technicalArtifactReader;
+    this.ontologyArtifactReader = ontologyArtifactReader;
   }
 
   @Override
@@ -85,6 +98,15 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
             output.technicalOutput().continuationStatus() == TechnicalContinuationStatus.BLOCKED
                 ? AnalysisRunLifecycleState.FAILED
                 : AnalysisRunLifecycleState.FINISHED);
+      }
+      if (output.ontologyOutput() != null) {
+        return RunStoreBootstrap.transitionAnalysisRun(
+            store,
+            running.runId(),
+            AnalysisRunLifecycleState.RUNNING,
+            output.ontologyOutput().status() == OntologyRunOutput.Status.COMPLETED
+                ? AnalysisRunLifecycleState.FINISHED
+                : AnalysisRunLifecycleState.FAILED);
       }
       if (output.sourcePreparationCheckpoint() != null) {
         return RunStoreBootstrap.transitionAnalysisRun(
@@ -138,6 +160,9 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
   @Override
   public ArtifactView artifact(ArtifactQuery query) {
     Objects.requireNonNull(query, "artifact query");
+    if (query.ontologyArtifactQueryKey() != null) {
+      return ontologyArtifact(query);
+    }
     return query.technicalArtifactQueryKey() == null
         ? businessArtifact(query)
         : technicalArtifact(query);
@@ -195,6 +220,35 @@ public final class LocalRepositoryAnalysisAgent implements RepositoryAnalysisAge
     }
     return technicalArtifactReader.read(
         runId, output, query.technicalArtifactQueryKey(), query.entryId(), query.maxBytes());
+  }
+
+  private ArtifactView ontologyArtifact(ArtifactQuery query) {
+    if (ontologyArtifactReader == null) {
+      throw new IllegalStateException("ANALYSIS_RUN_ARTIFACT_READ_NOT_CONFIGURED");
+    }
+    AnalysisRunId runId = AnalysisRunId.parse(query.runId());
+    AnalysisRunReference run = RunStoreBootstrap.reopenAnalysisRun(store, runId);
+    if (run.lifecycleState() != AnalysisRunLifecycleState.FINISHED
+        && run.lifecycleState() != AnalysisRunLifecycleState.FAILED) {
+      throw new IllegalStateException("ANALYSIS_RUN_ARTIFACT_NOT_READY");
+    }
+    AnalysisRunOutput output = RunStoreBootstrap.reopenAnalysisRunOutput(store, runId).orElse(null);
+    if (output == null && !isPrivateOntologyQuery(query.ontologyArtifactQueryKey())) {
+      throw new IllegalStateException("ANALYSIS_RUN_OUTPUT_MISSING");
+    }
+    if (output != null
+        && output.ontologyOutput() == null
+        && !isPrivateOntologyQuery(query.ontologyArtifactQueryKey())) {
+      throw new IllegalStateException("ANALYSIS_RUN_ARTIFACT_NOT_READY");
+    }
+    return ontologyArtifactReader.read(
+        runId, output, query.ontologyArtifactQueryKey(), query.producingTaskId(), query.maxBytes());
+  }
+
+  private static boolean isPrivateOntologyQuery(OntologyArtifactQueryKey key) {
+    return key == OntologyArtifactQueryKey.ONTOLOGY_TASK_INDEX
+        || key == OntologyArtifactQueryKey.ONTOLOGY_TASK_RECORD
+        || key == OntologyArtifactQueryKey.ONTOLOGY_ASSEMBLY_DIAGNOSTIC;
   }
 
   @Override

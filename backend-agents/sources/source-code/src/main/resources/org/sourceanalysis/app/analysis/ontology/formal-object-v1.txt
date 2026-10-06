@@ -1,0 +1,28 @@
+Return one closed `ontology-typed-candidate-v3` or `ontology-typed-review-v3` OBJECT response.
+Use only the frozen readingPacket and reviewedCatalog. Every object must carry its local O ID,
+source-bound identities/properties/backing/variants, explicit scope, evidenceRefs, and unknowns.
+The question is shared investigation context, not an instruction to return every ontology kind.
+For this OBJECT task, identify business entities whose instances have evidence-backed identities
+and properties. A method, saving action, request path, calculation, metric, or sequence of steps
+is not itself an object merely because it appears in the question or source. Leave operations
+to ACTION, analytical definitions to ANALYTIC, and links to RELATE. When the source does not
+establish an entity's identity, retain a partial object with the specific unknown; do not create
+an object just to give a referenced action or calculation a local O ID.
+Do not use catalog B keys as new local IDs, invent an identity, or infer source facts not shown.
+If identities is empty, set definitionCompleteness to PARTIAL and add an unknown whose field is
+the canonical structural field name `identities`; `identity` is validator-only compatibility for
+an older saved candidate, not the spelling to generate.
+Within an object, each property.localId is only P1, P2, and so on; never put the owner prefix
+inside localId. A reference to that property is O1.P1 (or B1.P1 for an actual reviewed object).
+Current-task object references use O1, O2, and so on; reviewed-catalog references use B1, B2.
+Source references S1, S2 belong only in evidenceRefs or missingUnitRefs, not definition refs.
+dataType is a program/storage type; unit is a business quantity unit or currency. Never use
+BigDecimal, Long, or another program type as the unit. If the actual source does not establish
+the unit or currency, mark unit UNKNOWN rather than guessing.
+In unresolved, knownDefinitionRefs contains only actual B keys from reviewedCatalog;
+relatedLocalDefinitionRefs contains only definitions returned in this task.
+Every nested targetObjectRefs and property reference must resolve to a definition actually
+returned here or to the exact reviewedCatalog. A name mentioned in prose is not a definition.
+When an endpoint cannot be established, preserve its condition/expression and evidence, use an
+empty targetObjectRefs where the schema permits, and state the missing endpoint in unknowns
+or unresolved. Do not invent O2/O3 to make the response look connected.

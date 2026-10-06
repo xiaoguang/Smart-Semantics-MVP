@@ -38,24 +38,42 @@ public final class PersistenceMaterialReader {
   private static final Set<String> LEGACY_PRODUCERS =
       Set.of("persistence-analysis-v1", "persistence-analysis-v2");
   private static final Set<String> TECHNICAL_V3_PRODUCERS = Set.of("persistence-analysis-v3");
-  private final CanonicalAnalysisStepArtifactStore steps;
+  private final CanonicalAnalysisStepArtifactStore persistenceSteps;
+  private final CanonicalAnalysisStepArtifactStore backendSteps;
   private final CanonicalAnalysisStepArtifactStore sourceSteps;
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
 
   public PersistenceMaterialReader(CanonicalAnalysisStepArtifactStore steps) {
-    this(steps, steps);
+    this(steps, steps, steps);
   }
 
   /** Uses the source-preparation store only for exact R0 receipt validation. */
   public PersistenceMaterialReader(
       CanonicalAnalysisStepArtifactStore steps, CanonicalAnalysisStepArtifactStore sourceSteps) {
-    this.steps = Objects.requireNonNull(steps, "analysis step artifact store");
+    this(steps, steps, sourceSteps);
+  }
+
+  /**
+   * Reopens a saved persistence publication with the exact stores of its three predecessors.
+   *
+   * <p>The default constructors intentionally retain the historical single-store path. R4 may cite
+   * an R2 backend and R3 persistence publication with distinct saved policy registries, so its
+   * caller supplies those two verified stores explicitly.
+   */
+  public PersistenceMaterialReader(
+      CanonicalAnalysisStepArtifactStore persistenceSteps,
+      CanonicalAnalysisStepArtifactStore backendSteps,
+      CanonicalAnalysisStepArtifactStore sourceSteps) {
+    this.persistenceSteps =
+        Objects.requireNonNull(persistenceSteps, "persistence analysis-step artifact store");
+    this.backendSteps =
+        Objects.requireNonNull(backendSteps, "backend analysis-step artifact store");
     this.sourceSteps = Objects.requireNonNull(sourceSteps, "source analysis-step artifact store");
   }
 
   /** Reconstructs the saved immutable index without invoking XML, SQL, or Java analysis. */
   public PersistenceMaterialIndex reopen(AnalysisStepPublicationReference reference) {
-    return reopen(reference, steps.reopen(reference));
+    return reopen(reference, persistenceSteps.reopen(reference));
   }
 
   /** Reconstructs the index from an already reopened and still structurally verified Step 04. */
@@ -110,9 +128,11 @@ public final class PersistenceMaterialReader {
       Objects.requireNonNull(r1Controls, "R1 controls");
       Objects.requireNonNull(r2Controls, "R2 controls");
       ReopenedAnalysisStepPublication source = sourceSteps.reopen(expectedR0.publication());
-      ReopenedAnalysisStepPublication discovery = steps.reopen(expectedR1Discovery.publication());
-      ReopenedAnalysisStepPublication navigation = steps.reopen(expectedR1Navigation.publication());
-      ReopenedAnalysisStepPublication persistence = steps.reopen(reference);
+      ReopenedAnalysisStepPublication discovery =
+          backendSteps.reopen(expectedR1Discovery.publication());
+      ReopenedAnalysisStepPublication navigation =
+          backendSteps.reopen(expectedR1Navigation.publication());
+      ReopenedAnalysisStepPublication persistence = persistenceSteps.reopen(reference);
       if (!source.reference().equals(expectedR0.publication())
           || source.reference().address().analysisStepKey()
               != AnalysisStepKey.VERIFIED_SOURCE_INVENTORY
@@ -176,9 +196,11 @@ public final class PersistenceMaterialReader {
       Objects.requireNonNull(r1Controls, "R1 controls");
       Objects.requireNonNull(r2Controls, "R2 controls");
       ReopenedAnalysisStepPublication source = sourceSteps.reopen(expectedR0.publication());
-      ReopenedAnalysisStepPublication discovery = steps.reopen(expectedR1Discovery.publication());
-      ReopenedAnalysisStepPublication navigation = steps.reopen(expectedR1Navigation.publication());
-      ReopenedAnalysisStepPublication persistence = steps.reopen(reference);
+      ReopenedAnalysisStepPublication discovery =
+          backendSteps.reopen(expectedR1Discovery.publication());
+      ReopenedAnalysisStepPublication navigation =
+          backendSteps.reopen(expectedR1Navigation.publication());
+      ReopenedAnalysisStepPublication persistence = persistenceSteps.reopen(reference);
       requireTechnicalPredecessors(
           reference,
           expectedR2,

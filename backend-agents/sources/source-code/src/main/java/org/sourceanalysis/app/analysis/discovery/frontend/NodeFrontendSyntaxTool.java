@@ -262,6 +262,7 @@ public final class NodeFrontendSyntaxTool implements FrontendSyntaxTool {
       String output = strictUtf8(stdout);
       Map<String, FrontendSourceFileDisposition> files = new HashMap<>();
       List<FrontendRequestObservation> observations = new ArrayList<>();
+      List<FrontendPageContext> pageContexts = new ArrayList<>();
       List<FrontendDiagnosticRecord> diagnostics = new ArrayList<>();
       for (String line : output.split("\\r?\\n", -1)) {
         if (line.isEmpty()) {
@@ -277,6 +278,7 @@ public final class NodeFrontendSyntaxTool implements FrontendSyntaxTool {
         switch (recordType) {
           case "FILE" -> readFile(key, payload, documents, files);
           case "HTTP_REQUEST" -> observations.add(readObservation(key, payload, documents));
+          case "PAGE_CONTEXT" -> pageContexts.add(readPageContext(key, payload, documents));
           case "DIAGNOSTIC" -> diagnostics.add(readDiagnostic(key, payload, documents));
           default -> throw protocolInvalid();
         }
@@ -298,12 +300,14 @@ public final class NodeFrontendSyntaxTool implements FrontendSyntaxTool {
               .thenComparingInt(observation -> observation.callRange().startOffsetUtf16())
               .thenComparing(FrontendRequestObservation::instanceKey)
               .thenComparing(FrontendRequestObservation::requestId));
+      pageContexts.sort(Comparator.comparing(FrontendPageContext::contextId));
       diagnostics.sort(
           Comparator.comparing(FrontendDiagnosticRecord::sourcePath)
               .thenComparing(FrontendDiagnosticRecord::code)
               .thenComparing(
                   diagnostic -> diagnostic.requestId() == null ? "" : diagnostic.requestId()));
-      return new FrontendSyntaxScan(parsedPaths, observations, diagnostics, dispositions);
+      return new FrontendSyntaxScan(
+          parsedPaths, observations, pageContexts, diagnostics, dispositions);
     } catch (FrontendHttpDiscoveryException failure) {
       throw failure;
     } catch (IOException | RuntimeException failure) {
@@ -372,6 +376,122 @@ public final class NodeFrontendSyntaxTool implements FrontendSyntaxTool {
         nullableText(payload, "baseUrlStaticFallback"));
   }
 
+  private static FrontendPageContext readPageContext(
+      String key, ObjectNode payload, Map<String, SourceDocument> documents) {
+    String contextId = requiredText(payload, "contextId");
+    if (!key.equals(contextId)) {
+      throw protocolInvalid();
+    }
+    String pagePath = requiredText(payload, "pagePath");
+    SourceDocument page =
+        sourceDocument(documents, pagePath, requiredText(payload, "sourceSha256"));
+    List<FrontendPageSourceUnit> units = new ArrayList<>();
+    Map<String, SourceDocument> unitsByRef = new HashMap<>();
+    for (JsonNode node : array(payload, "sourceUnits")) {
+      FrontendPageSourceUnit unit = readPageSourceUnit(object(node), documents);
+      if (unitsByRef.put(
+              unit.unitRef(), sourceDocument(documents, unit.sourcePath(), unit.sourceSha256()))
+          != null) {
+        throw protocolInvalid();
+      }
+      units.add(unit);
+    }
+    List<FrontendPageObservation> observations = new ArrayList<>();
+    for (JsonNode node : array(payload, "observations")) {
+      observations.add(readPageObservation(object(node), unitsByRef));
+    }
+    List<FrontendPageRequestCondition> conditions = new ArrayList<>();
+    for (JsonNode node : array(payload, "requestConditions")) {
+      conditions.add(readPageRequestCondition(object(node), unitsByRef));
+    }
+    List<FrontendPageLimitation> limitations = new ArrayList<>();
+    for (JsonNode node : optionalArray(payload, "limitations")) {
+      ObjectNode limitation = object(node);
+      limitations.add(
+          new FrontendPageLimitation(
+              requiredText(limitation, "code"),
+              requiredText(limitation, "detail"),
+              nullableText(limitation, "unitRef")));
+    }
+    return new FrontendPageContext(
+        contextId,
+        pagePath,
+        page.sourceHash(),
+        requiredText(payload, "instanceKey"),
+        textArray(payload, "requestIds"),
+        units,
+        observations,
+        conditions,
+        limitations);
+  }
+
+  private static FrontendPageSourceUnit readPageSourceUnit(
+      ObjectNode payload, Map<String, SourceDocument> documents) {
+    String path = requiredText(payload, "sourcePath");
+    SourceDocument document = sourceDocument(documents, path, requiredText(payload, "sourceHash"));
+    return new FrontendPageSourceUnit(
+        requiredText(payload, "unitRef"),
+        path,
+        document.sourceHash(),
+        range(object(payload.get("sourceUnitRange")), document),
+        sourceUnitKind(payload));
+  }
+
+  private static FrontendPageObservation readPageObservation(
+      ObjectNode payload, Map<String, SourceDocument> unitsByRef) {
+    FrontendPageObservation.Kind kind;
+    try {
+      kind = FrontendPageObservation.Kind.valueOf(requiredText(payload, "kind"));
+    } catch (IllegalArgumentException invalid) {
+      throw protocolInvalid();
+    }
+    String fromUnitRef = requiredText(payload, "fromUnitRef");
+    SourceDocument fromDocument = unitsByRef.get(fromUnitRef);
+    if (fromDocument == null) {
+      throw protocolInvalid();
+    }
+    String toUnitRef = nullableText(payload, "toUnitRef");
+    if (toUnitRef != null && !unitsByRef.containsKey(toUnitRef)) {
+      throw protocolInvalid();
+    }
+    List<FrontendArgumentBinding> bindings = new ArrayList<>();
+    for (JsonNode node : array(payload, "argumentBindings")) {
+      bindings.add(readBinding(object(node)));
+    }
+    return new FrontendPageObservation(
+        requiredText(payload, "observationId"),
+        kind,
+        fromUnitRef,
+        toUnitRef,
+        range(object(payload.get("callRange")), fromDocument),
+        nullableText(payload, "eventName"),
+        textArray(payload, "actualArguments"),
+        textArray(payload, "formalParameters"),
+        bindings,
+        requiredText(payload, "detail"));
+  }
+
+  private static FrontendPageRequestCondition readPageRequestCondition(
+      ObjectNode payload, Map<String, SourceDocument> unitsByRef) {
+    FrontendPageRequestCondition.Branch branch;
+    try {
+      branch = FrontendPageRequestCondition.Branch.valueOf(requiredText(payload, "branch"));
+    } catch (IllegalArgumentException invalid) {
+      throw protocolInvalid();
+    }
+    String unitRef = requiredText(payload, "unitRef");
+    SourceDocument document = unitsByRef.get(unitRef);
+    if (document == null) {
+      throw protocolInvalid();
+    }
+    return new FrontendPageRequestCondition(
+        requiredText(payload, "requestId"),
+        unitRef,
+        range(object(payload.get("range")), document),
+        requiredText(payload, "expression"),
+        branch);
+  }
+
   private static FrontendWrapperCall readWrapper(
       ObjectNode payload, Map<String, SourceDocument> documents) {
     String path = requiredText(payload, "sourcePath");
@@ -397,18 +517,20 @@ public final class NodeFrontendSyntaxTool implements FrontendSyntaxTool {
       ObjectNode payload, Map<String, SourceDocument> documents) {
     String path = requiredText(payload, "sourcePath");
     SourceDocument document = sourceDocument(documents, path, requiredText(payload, "sourceHash"));
-    FrontendWrapperCall.SourceUnitKind sourceUnitKind;
-    try {
-      sourceUnitKind =
-          FrontendWrapperCall.SourceUnitKind.valueOf(requiredText(payload, "sourceUnitKind"));
-    } catch (IllegalArgumentException invalid) {
-      throw protocolInvalid();
-    }
+    FrontendWrapperCall.SourceUnitKind sourceUnitKind = sourceUnitKind(payload);
     return new FrontendSupportingSourceUnit(
         path,
         document.sourceHash(),
         range(object(payload.get("sourceUnitRange")), document),
         sourceUnitKind);
+  }
+
+  private static FrontendWrapperCall.SourceUnitKind sourceUnitKind(ObjectNode payload) {
+    try {
+      return FrontendWrapperCall.SourceUnitKind.valueOf(requiredText(payload, "sourceUnitKind"));
+    } catch (IllegalArgumentException invalid) {
+      throw protocolInvalid();
+    }
   }
 
   private static FrontendArgumentBinding readBinding(ObjectNode payload) {
@@ -496,6 +618,17 @@ public final class NodeFrontendSyntaxTool implements FrontendSyntaxTool {
       throw protocolInvalid();
     }
     return (ArrayNode) node;
+  }
+
+  private static List<String> textArray(ObjectNode object, String field) {
+    List<String> values = new ArrayList<>();
+    for (JsonNode node : array(object, field)) {
+      if (!node.isTextual() || node.textValue().isBlank()) {
+        throw protocolInvalid();
+      }
+      values.add(node.textValue());
+    }
+    return List.copyOf(values);
   }
 
   private static String requiredText(ObjectNode object, String field) {

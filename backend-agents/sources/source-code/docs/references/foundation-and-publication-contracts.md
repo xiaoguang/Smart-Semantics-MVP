@@ -2,6 +2,8 @@
 
 本附录服务[总体设计](../DESIGN.md)，维护来源完整性、计算owner、保存与业务真实性。逐步算法由各步骤拥有，执行/重试由[模型执行](../modules/model-job-execution.md)拥有，目标版本/双来源由[Activity集成](../modules/activity-explanation/integration-contracts.md)拥有。
 
+新Ontology分支的版本、来源和结果由[本体合同](../modules/ontology-recognition/contracts.md)拥有，不沿旧Activity双来源/过程合同实现兼容。共享底座可复用；以下旧业务规则只约束原分支。
+
 ## 1. 依据能说明什么
 
 | 依据 | 能说明 | 不自动说明 |
@@ -21,7 +23,7 @@ Step01拥有冻结来源，Step02拥有入口分母，Step03拥有JDT导航与�
 
 新Step06内部ActivityMaterialProjector负责无损投影及来源映射，ReadingCoordinator负责按模型决定取回实际完整单元，ActivityExplainer唯一负责业务解释。允许安全结构读取保存的XML rawSource，不运行JDT/PersistenceAnalyzer/JSqlParser或另建行业语义分析器。
 
-Step07 Cataloger发现候选，Assembler读取/封包，Reconstructor已实现DRAFT→WRITE→最后RULE_REVIEW，Consolidator做既有无损关系裁决，Publisher只校验/排版。完整原文在DRAFT前到位，最终核对看到实际写作全文。Step08只读历史report，不启动新生成。
+既有Step07过程分支的Cataloger发现候选，Assembler读取/封包，Reconstructor做DRAFT→WRITE→RULE_REVIEW，Consolidator无损裁决，Publisher排版。新Ontology分支是R4/R0→Corpus→识别/关联→原文REVIEW→独立发布，没有WRITE或旧过程归并，不借knowledgeCheckpoint。共用canonical store不表示共用业务owner。Step08只读历史report。
 
 ## 3. 保存与来源作用域
 
@@ -55,6 +57,6 @@ Step07 Cataloger发现候选，Assembler读取/封包，Reconstructor已实现DR
 
 ## 6. 当前实现与验证界限
 
-现有后端Step01–05、Step05 v1→Activity、阶段retry和历史M10/新Step05双来源已有实现，保存418条新Activity；必需范围是否完整以[Activity当前状态](../modules/activity-explanation/README.md)为准，不能用条数代替范围验收。原三个技术命令、READY/阻断报告、有限Vue关联和Step05 v2已有固定源码保存结果；嵌套调用准确性仍未通过。新四操作及每入口JSON是待实施目标，详见[技术合同](../modules/technical-analysis/README.md)，业务消费者不自动支持新格式。Step07三阶段及历史重开已有实现；历史三例12请求没有全部准确性通过，详见[实测](../supplements/cross-object-process-reconstruction/three-case-acceptance-result-20260916.md)。
+当前四技术操作及每入口R4 JSON已经交付，具名调用/位置/保存问题通过定向复核；最终339入口/51前端请求，限制见[最终验收](../supplements/technical-entry-evidence-acceptance-20260929.md)。旧Packet/Activity/过程能力另属既有分支，其全仓业务质量不能由技术交付推断。本体consumer、typed四操作和保存/查询已经通过限定工程测试；最终质量和三个真实语义样例仍待验，通用保存/Provider成功不能替代客户本体质量。
 
 [真实材料推演](../examples/activity-material-end-to-end-walkthrough.md)明确区分保存原文、目标投影、拟Activity与Step07补读；不冒充新模型结果。设计逻辑闭合、程序测试、可读性认可和实际语义质量分别报告。本轮不重跑代码/测试/模型或扩大全仓范围。

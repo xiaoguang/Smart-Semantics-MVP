@@ -37,7 +37,10 @@ storage:
   root: /absolute/analysis-store
   preparedSourceArchive: /absolute/prepared-source-archive
   sourcePreparationPolicyRegistry: /absolute/source-preparation-policy.json
-  artifactPolicyRegistry: /absolute/technical-analysis-artifact-policy-set-v2.json
+  artifactPolicyRegistry: /absolute/technical-analysis-artifact-policy-set-v3.json
+  # Optional historical files. A saved run selects one only by exact registry ID + digest.
+  upstreamArtifactPolicyRegistries:
+    - /absolute/technical-analysis-artifact-policy-set-v2.json
 frontend:
   enabled: true
   nodeExecutable: /absolute/node
@@ -114,7 +117,7 @@ output-v9调整TechnicalRunOutput的owner规则，不再要求frontendIndex与re
 
 ### 3.1 每个命令内部步骤
 
-**R1：**重开R0 → 校验前端范围/工具 → 一次投影冻结源码给固定helper → parser及有限关联到HTTP请求 → 保存FILE、SOURCE_UNIT、请求、参数及局限 → 正式module6 → 登记输出。v2 对实际静态本地调用可同时保存 caller wrapper 与被调完整 supporting unit（如 `loadData`→`getQueryParams`），两者范围/来源分别严格核验；不执行JS。无后端ID也能成功；语法不支持按文件记范围，工具协议损坏停止。
+**R1：**重开R0 → 校验前端范围/工具 → 一次投影冻结源码给固定helper → parser及有限关联到HTTP请求 → 保存FILE、SOURCE_UNIT、请求、参数及局限 → 正式module6 → 登记输出。当前v3还保存有限的`PAGE_CONTEXT`记录；运行时重构保留其完整列表后以module-v3/schema-v3发布和重开。v2 对实际静态本地调用可同时保存 caller wrapper 与被调完整 supporting unit（如 `loadData`→`getQueryParams`），两者范围/来源分别严格核验；不执行JS。无后端ID也能成功；语法不支持按文件记范围，工具协议损坏停止。
 
 **R2：**重开R0 → 读取官方Maven输出并绑定实际环境 → 保存就绪报告 → 同一JDT环境/session发现后端入口、Mapper线索 → 现有调用收集＋批准的逐调用绑定修正 → 保存Step02/03 → 登记输出并关闭工具。known环境错误阻断，diagnosticCoverage未确认披露后继续。完全不调用FrontendHttpDiscoverer/Node。
 
@@ -122,7 +125,7 @@ output-v9调整TechnicalRunOutput的owner规则，不再要求frontendIndex与re
 
 **R3：**重开R2 request/output/Step02/03并核同R0 → 从R0读取XML → 现有PersistenceAnalyzer（含排序投影修正）→ 保存Step04 → 重开校验并登记。`PlainSelect`与`SetOperationList`的 `ORDER_BY` 都直接来自 JSqlParser AST，保留表达式、明确方向与`NULLS_FIRST`/`NULLS_LAST`，不再解析SQL文本。无R1输入，不能保留“frontendIndex非空”的旧守卫。
 
-**R4：**重开R1和R3 → 沿R3取得准确R2 → 同源/版本/owner检查 → 根据已保存范围水化前端单元 → 已有method/path匹配逻辑移到组装 → 按entryId组织全部已取得方法/调用/XML/SQL/前端 → 资源检查 → 发布入口文件/索引/前端覆盖 → 重开和登记。不解析原文推导新关系。新版 `entry-evidence-v1` producer及R0→R1/R2→R3→R4 CLI、历史重开、index查询和固定源码339个入口的全量组装均已验证；具体运行、具名调用复核和限制见[验收记录](../../supplements/technical-entry-evidence-acceptance-20260929.md)。不能把历史Packet作为新版R4成功输出，也不能把静态候选当成实际部署连通。资源超限返回具名BLOCKED且没有成功receipt。旧配置拒绝新生产、新v3必需参数、历史读取及直接受影响的回归均已定向验证。
+**R4：**重开R1和R3 → 沿R3取得准确R2 → 同源/版本/owner检查 → 根据已保存范围水化前端单元 → 已有method/path匹配逻辑移到组装 → 按entryId组织全部已取得方法/调用/XML/SQL/前端 → 资源检查 → 发布入口文件/索引/前端覆盖 → 重开和登记。不解析原文推导新关系。当前生产接线使用`entry-evidence-v2`、index-v2、coverage-v2和module-v4；历史v1/module-v3严格保留。直接canonical-store合同已经验证v4安装/重开，R4公共artifact查询键的相应版本化属于单独Task 7，不能误报为本轮端到端查询验收。不能把历史Packet作为新版R4成功输出，也不能把静态候选当成实际部署连通。资源超限返回具名BLOCKED且没有成功receipt。旧配置拒绝新生产、新v3必需参数、历史读取及直接受影响的回归均已定向验证。
 
 ### 3.2 生命周期与用户可见结果
 
@@ -150,7 +153,9 @@ output-v9调整TechnicalRunOutput的owner规则，不再要求frontendIndex与re
 | R3 | Step04 persistence-material-index.jsonl |
 | R4 | Step05 module4及步骤publication：entry-evidence-index.json、entry-<完整entryIdhex>.json、frontend-coverage.jsonl |
 
-R0仍由source-preparation policy/archive重开；R1–R4由technical policy处理。v3新运行使用`tools/repository-run/technical-analysis-artifact-policy-set-v2.json`，它在保留v1全部规则的基础上加入`frontend-http-index-v2`、技术Java索引`java-code-index-v3`、持久化索引`persistence-material-index-v2`及入口证据三种文件规则。历史`technical-analysis-artifact-policy-set-v1.json`和历史JDT policy均不修改，历史结果以其原controls/policy hash重开。技术范围更大不能改变R0历史策略。各producer使用当前destinationRunId；同源不等于同owner。
+R0仍由source-preparation policy/archive重开；R1–R4由technical policy处理。当前新运行使用`tools/repository-run/technical-analysis-artifact-policy-set-v3.json`，它保留v2规则并新增`frontend-http-index-v3`和entry-evidence/index/coverage-v2；历史`technical-analysis-artifact-policy-set-v2.json`字节不改。重开保存运行时，当前registry和`storage.upstreamArtifactPolicyRegistries`中显式文件只有其完整ID和摘要等于保存引用时才可使用；没有latest fallback。历史`technical-analysis-artifact-policy-set-v1.json`和历史JDT policy均不修改，历史结果以其原controls/policy hash重开。技术范围更大不能改变R0历史策略。各producer使用当前destinationRunId；同源不等于同owner。
+
+跨策略组装的同一规则必须用于实际读取、发布前上游检查和公开查询，而不只用于初始准入：旧R2的入口/Java索引、旧R3的持久化材料各按其保存的准确registry读取，新R1和R4按各自registry读取/安装。不能把目的运行的store传给旧上游reader，也不能合并策略或放宽receipt检查。当前客户源码新R1-v3和R4-v2已经安装；生产侧有限修复通过混合策略单例及10项直接回归。但完成运行的公开查询尚有目的store误用和版本键缺口，未计查询验收。历史四命令验收不替代这个新增版本组合的验收。
 
 检查链：
 1. 配置绑定R0必须与各保存输入相同，含有效排除，不从材料反推预期值。
@@ -162,9 +167,9 @@ R0仍由source-preparation policy/archive重开；R1–R4由technical policy处�
 
 入口变长文件集合、容量与相对路径由[入口证据合同](entry-evidence.md#8-容量异常与保存)规定。当前64个payload的默认限制不能容纳所有入口文件，实现必须同步精确store合同和显式预算；不能只改render方法。新文件集合平铺，不增加任意目录/文件写权限。
 
-artifact增加ENTRY_EVIDENCE_INDEX、ENTRY_EVIDENCE（必须准确entryId）、FRONTEND_EVIDENCE_COVERAGE版本化查询；旧CODE_READING_MATERIALS(_V2)仅读原schema。FRONTEND_HTTP_INDEX也按请求版本明确读v1/v2，不把无ENTRY_LINK的v2伪装成v1。query不启动任何工具/Provider。
+artifact增加ENTRY_EVIDENCE_INDEX、ENTRY_EVIDENCE（必须准确entryId）、FRONTEND_EVIDENCE_COVERAGE版本化查询；旧CODE_READING_MATERIALS(_V2)仅读原schema。R1-v3/R4-v2的Task 7目标键为`FRONTEND_HTTP_INDEX_V3`、`ENTRY_EVIDENCE_INDEX_V2`、`ENTRY_EVIDENCE_V2`和`FRONTEND_EVIDENCE_COVERAGE_V2`。每个新键只接受对应新Schema，既有键继续只接受其原Schema；不能通过放宽旧键冒充版本支持。查询准入和实际payload读取均必须按该publication的准确owner运行选择其保存策略，而不是用目的R4策略重开R2/R3。query不启动任何工具/Provider。当前新R4已实际保存，但正式查询仍失败；上述新键和owner查询接线尚待直接回归，不计查询验收完成。
 
-`inspect.availableOutputs`列出的名称必须是该已保存运行在`artifact --key`中实际可读的版本化键。新前端v2、Java索引v3、持久化v2不能继续广告相应旧schema键；历史v4/v8仍列旧键。R0→R1/R2→R3→R4正式CLI的版本化名称直接回归已通过1/0/0；固定源码四命令也已独立运行并严格重开。
+`inspect.availableOutputs`列出的名称必须是该已保存运行在`artifact --key`中实际可读的版本化键。新前端v2、Java索引v3、持久化v2不能继续广告相应旧schema键；R1-v3/R4-v2也必须等待Task 7增加严格新键，历史v4/v8仍列旧键。固定源码四命令和公共查询版本化验收各自保留其真实完成边界。
 
 ## 5. 版本与兼容
 
@@ -172,16 +177,16 @@ artifact增加ENTRY_EVIDENCE_INDEX、ENTRY_EVIDENCE（必须准确entryId）、F
 
 | 合同 | 当前已实现 | 本轮新写 |
 | --- | --- | --- |
-| 技术配置 | v2（v1历史） | v3已接入；R1–R4已在固定源码上真实执行，最终R4位置投影待复验 |
+| 技术配置 | v2（v1历史） | v3已接入；当前R1-v3/R4-v2运行时接线完成，公共查询键另属Task 7 |
 | 公共请求 / 运行输出 | v4 / v8 | v5 / v9已接入；四意图及R4双分支已由真实运行验证，完整内容准确性另验 |
 | 私有编译输入 / 环境 / 就绪 | v2 / v1 / v1 | 保持，前端从后端owner规则中移出 |
-| 前端索引 / producer | v1 / v1（含ENTRY_LINK） | v2 / v2已接入（无后端匹配、无ENTRY_LINK） |
+| 前端索引 / producer | v1 / v1（含ENTRY_LINK） | v3 / v3已接入（无后端匹配、含有限PAGE_CONTEXT；v2严格保留） |
 | Step02 publisher / capability / entry行 | v4 / v2 / v3 | v5 / v2 / v3（后端运行不再要求frontend；capability正文格式不变） |
 | Core helper协议 | v3 | v4，真实逐调用绑定投影；不是新增解析器 |
 | Java索引 Schema / 技术 module producer | v2 / v3 | v3 / v4，绑定及外部/未知/失败分类 |
 | 持久化索引 Schema / 技术 module producer | v1 / v2 | v2 / v3，接受新Java basis、完整排序投影 |
-| Step05 producer | v2（Packet） | v3（按entry文件），不是向旧Packet暗加字段 |
-| 入口目录 / 入口文件 / 前端覆盖 | 无 | entry-evidence-index-v1 / entry-evidence-v1 / frontend-evidence-coverage-v1 |
+| Step05 producer | v2（Packet） | v4（按entry文件及v2 evidence schema），不是向旧Packet暗加字段 |
+| 入口目录 / 入口文件 / 前端覆盖 | 无 | entry-evidence-index-v2 / entry-evidence-v2 / frontend-evidence-coverage-v2 |
 | 私有材料状态 | v5 | v6，明确ENTRY_EVIDENCE_SET类型 |
 | 源码准备 / Activity / 过程 | 既有 | 不变 |
 

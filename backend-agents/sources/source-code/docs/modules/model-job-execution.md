@@ -2,6 +2,8 @@
 
 本页拥有已有Java17 job pool、单一YAML、Provider绑定、逐阶段保存、包级失败处理和跨批复用。业务阅读分别由[Step06](../analysis-steps/06-flow-interpretation.md)、[Activity详细设计](activity-explanation/README.md)和[Step07](../analysis-steps/07-repository-knowledge.md)拥有。
 
+新[Ontology分支](ontology-recognition/README.md)只复用通用Provider、BoundedModelJobExecutor及私有不可变保存，不消费旧Activity/Process结果。其独立survey/extract/relate路由、EXTRACT/RELATE→REVIEW及本体v1复用由[本体合同](ontology-recognition/contracts.md)拥有；当前ModelJobExecutionConfiguration的闭合旧phase不能原样套用。下文现行Activity/Process的顺序、retry及旧结果reader不变，也不作为本体必须兼容的内容。
+
 ## 1. 已实现基础与本轮目标
 
 | 内容 | 当前分支实际状态 | 本次端到端增量 |
@@ -138,7 +140,7 @@ sourceAnalysis:
 
 不建设新的熔断器服务。Provider不可用由现有Coordinator的绑定状态/终止原因控制；普通包失败不能全局stop，真正共享运行安全故障也不能让326包重复发无效请求。
 
-默认transient分类只来自可靠的结构化Provider状态/本地已确认超时终止，不靠中文或英文消息子串识别。当前Codex订阅进程边界没有已验证的typed error code：非零退出的stdout/stderr自由文本统一记UNKNOWN，不自动按限流、容量或配置重试；其他Provider已经提供的可靠typed reason仍按原策略处理。实际response优先、否则stdout/stderr各自在4096字节上限内按原字节保留到私有失败记录，公共异常与普通日志不携带这些原文。
+默认transient分类只来自可靠的结构化Provider状态/本地已确认超时终止，不靠中文或英文消息子串识别。当前Codex订阅进程边界没有已验证的typed error code：非零退出的stdout/stderr自由文本统一记UNKNOWN，不自动按限流、容量或配置重试；其他Provider已经提供的可靠typed reason仍按原策略处理。实际response优先、否则stdout/stderr各自只保留末尾最多4096字节到私有失败记录，以免长输入回显挤掉最终错误；公共异常与普通日志不携带这些原文。私有诊断可能包含源码片段或工具输出，不进入提交或公开产物。
 
 ## 7. 私有保存与复用
 

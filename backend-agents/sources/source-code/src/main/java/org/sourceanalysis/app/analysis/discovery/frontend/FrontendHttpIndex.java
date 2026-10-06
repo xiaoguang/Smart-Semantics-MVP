@@ -10,7 +10,8 @@ public record FrontendHttpIndex(
     List<FrontendDiagnosticRecord> diagnostics,
     Status status,
     List<FrontendConfigurationFileRecord> configurationFiles,
-    List<FrontendSupportingSourceUnit> supportingSourceUnits) {
+    List<FrontendSupportingSourceUnit> supportingSourceUnits,
+    List<FrontendPageContext> pageContexts) {
 
   /** Distinguishes an enabled scan with no requests from an explicitly disabled frontend scope. */
   public enum Status {
@@ -47,7 +48,28 @@ public record FrontendHttpIndex(
       List<FrontendDiagnosticRecord> diagnostics,
       Status status,
       List<FrontendConfigurationFileRecord> configurationFiles) {
-    this(files, requests, entryLinks, diagnostics, status, configurationFiles, List.of());
+    this(
+        files, requests, entryLinks, diagnostics, status, configurationFiles, List.of(), List.of());
+  }
+
+  /** Retains v2 callers while v3 adds independent page-instance context observations. */
+  public FrontendHttpIndex(
+      List<FrontendSourceFileDisposition> files,
+      List<FrontendHttpRequestRecord> requests,
+      List<FrontendEntryLinkRecord> entryLinks,
+      List<FrontendDiagnosticRecord> diagnostics,
+      Status status,
+      List<FrontendConfigurationFileRecord> configurationFiles,
+      List<FrontendSupportingSourceUnit> supportingSourceUnits) {
+    this(
+        files,
+        requests,
+        entryLinks,
+        diagnostics,
+        status,
+        configurationFiles,
+        supportingSourceUnits,
+        List.of());
   }
 
   public FrontendHttpIndex {
@@ -57,6 +79,7 @@ public record FrontendHttpIndex(
     diagnostics = List.copyOf(diagnostics);
     configurationFiles = List.copyOf(configurationFiles);
     supportingSourceUnits = List.copyOf(supportingSourceUnits);
+    pageContexts = List.copyOf(pageContexts);
     if (status == null) {
       throw new IllegalArgumentException("frontend HTTP index status");
     }
@@ -67,6 +90,13 @@ public record FrontendHttpIndex(
    */
   public static FrontendHttpIndex disabledIndex() {
     return new FrontendHttpIndex(
-        List.of(), List.of(), List.of(), List.of(), Status.DISABLED, List.of());
+        List.of(),
+        List.of(),
+        List.of(),
+        List.of(),
+        Status.DISABLED,
+        List.of(),
+        List.of(),
+        List.of());
   }
 }

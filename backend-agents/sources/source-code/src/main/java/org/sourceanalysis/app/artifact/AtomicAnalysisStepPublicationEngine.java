@@ -898,7 +898,7 @@ final class AtomicAnalysisStepPublicationEngine {
       case BUSINESS_FLOWS ->
           publisher.moduleNumber() == 4
                   && "entry-evidence".equals(publisher.moduleKey())
-                  && "v3".equals(publisherModuleVersion)
+                  && ("v3".equals(publisherModuleVersion) || "v4".equals(publisherModuleVersion))
               ? new StepContract(
                   4,
                   "entry-evidence",
@@ -934,6 +934,61 @@ final class AtomicAnalysisStepPublicationEngine {
                           AnalysisStepKey.APPLICATION_DISCOVERY,
                           AnalysisStepKey.PROGRAM_GRAPHS,
                           AnalysisStepKey.PROVEN_CODE_FACTS));
+      case REPOSITORY_KNOWLEDGE ->
+          switch (publisher.moduleNumber()) {
+            case 2 -> {
+              if (!"ontology-corpus".equals(publisher.moduleKey())
+                  || !Set.of("v1", "v2").contains(publisherModuleVersion)) {
+                throw invalidInstall();
+              }
+              yield new StepContract(
+                  2,
+                  "ontology-corpus",
+                  List.of(
+                      List.of("ontology-corpus.json"),
+                      List.of("ontology-corpus.json", "schema-evidence.json")),
+                  List.of(AnalysisStepKey.BUSINESS_FLOWS));
+            }
+            case 3 -> {
+              if (!"ontology-identification".equals(publisher.moduleKey())
+                  || !Set.of("v1", "v3", "v4", "v5").contains(publisherModuleVersion)) {
+                throw invalidInstall();
+              }
+              yield new StepContract(
+                  3,
+                  "ontology-identification",
+                  List.of(List.of("ontology-identification.json")),
+                  List.of(AnalysisStepKey.BUSINESS_FLOWS));
+            }
+            case 4 -> {
+              if (!"ontology-relations".equals(publisher.moduleKey())
+                  || !Set.of("v1", "v3", "v4", "v5").contains(publisherModuleVersion)) {
+                throw invalidInstall();
+              }
+              yield new StepContract(
+                  4,
+                  "ontology-relations",
+                  List.of(List.of("ontology-relations.json")),
+                  List.of(AnalysisStepKey.BUSINESS_FLOWS));
+            }
+            case 5 -> {
+              if (!"ontology-publisher".equals(publisher.moduleKey())
+                  || !Set.of("v1", "v3", "v4", "v5").contains(publisherModuleVersion)) {
+                throw invalidInstall();
+              }
+              yield new StepContract(
+                  5,
+                  "ontology-publisher",
+                  List.of(
+                      List.of(
+                          "ontology-coverage.json",
+                          "ontology-review.json",
+                          "ontology-sources.jsonl",
+                          "ontology.json")),
+                  List.of(AnalysisStepKey.BUSINESS_FLOWS));
+            }
+            default -> throw invalidInstall();
+          };
       default -> throw invalidInstall();
     };
   }

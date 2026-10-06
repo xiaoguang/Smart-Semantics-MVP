@@ -1,8 +1,8 @@
 # 独立前端 HTTP 发现与按入口组装
 
-状态：**独立前端四运行拆分实施中**。保留 `prepare-source` 的 R0；`collect-frontend` 单独产出 R1、仅后端 `collect-code` 产出 R2，两者及 R3/R4 已通过正式 CLI／Agent／存储的同源 fixture 测试。固定源码的真实 R1 已发布并重开前端索引 v2；真实 R2 完成339入口的导航循环后在Step03发布前失败，尚无可用Java索引；R3/R4尚未完成固定源码验收。四次技术运行必须绑定同一准确 R0。配置/request/output 新写版本为 v3/v5/v9。前端不需要后端入口、JDT 或 Maven；HTTP 请求与后端 `entryId` 的匹配只在 R4 组装。
+状态：**独立前端四运行已交付有限静态证据；选择回调与保存动作仍有采集缺口。** 保留 `prepare-source` 的 R0；`collect-frontend` 单独产出 R1、仅后端 `collect-code` 产出 R2，R3消费准确R2，R4消费准确R1/R3。固定源码最终R1已保存51条请求、69条源码单元；最终R4已发布并通过正式查询重开339份入口JSON。最早R2的发布失败是历史尝试，不能继续写成最终R2/R3/R4不存在。四次技术运行绑定同一准确R0。配置/request/output 新写版本为v3/v5/v9。前端不需要后端入口、JDT或Maven；HTTP请求与后端`entryId`的匹配只在R4组装。运行时地址未知时仍保留候选，已解析文件不代表其全部动作已形成材料。
 
-**当前事实**：`FrontendHttpDiscoverer` 和锁定 `vue-eslint-parser@10.4.1` 的自有 Node helper 已完成有限语法/来源验证。新独立 R1 不读取 `HttpEntryPoint`，也不发布旧 v1 的 `ENTRY_LINK`；旧 `collect-code` module 6／旧 Step05 v2 的链接仅属历史产物。固定源码的旧 R1/R2/R3 技术产物见[实例走读](../../supplements/vue-to-sql-walkthrough.md)，新 R1 的实测与尚缺 R2/R3/R4 的范围见[本轮验收](../../supplements/technical-entry-evidence-acceptance-20260929.md)。
+**当前事实**：`FrontendHttpDiscoverer`和锁定`vue-eslint-parser@10.4.1`的自有Node helper已完成有限语法/来源验证。新独立R1不读取`HttpEntryPoint`，也不发布旧v1的`ENTRY_LINK`；旧`collect-code` module 6／旧Step05 v2的链接仅属历史产物。固定源码旧三运行见[实例走读](../../supplements/vue-to-sql-walkthrough.md)，最终四运行及真实限制见[本轮验收](../../supplements/technical-entry-evidence-acceptance-20260929.md)。本次选择回调和保存材料的零业务模型薄实验见[实验记录](../../supplements/frontend-selection-save-probe-20261002.md)；实验输出不是正式R1/R4。
 
 ## 1. 目标、输入和模块接口
 
@@ -37,6 +37,12 @@ parser 返回的 AST 只在 helper/模块内部使用。Java 获得带源码位�
 有限值只含字面量、静态字段和直接参数绑定。控制条件原样保留，不能为了“求出 URL”逐渐实现任意循环、闭包、Promise、对象 mutation、动态调用或通用分支求值。
 
 新语法/封装不是“parser 能解析就支持”。首版不承诺 fetch、Composition API、store、TypeScript 调用追踪或任意模板字符串推导；有真实需求和具名 fixture 后再讨论扩展。未知请求保留原文，不能丢掉以美化覆盖。
+
+### 2.1.1 已核实的查询与保存边界
+
+当前正式helper的有限链路主要覆盖打开查询列表的页面函数、组件/mixin查询及`getAction`封装。固定采购订单和采购入库页面均有完整原文，但R1只登记其查询函数，没有登记`linkBillListOk`选择回调、`info.linkId = info.id`所在完整方法及保存请求链。最终R4的`POST /depotHead/addDepotHeadAndDetail`前端单元、确定请求和候选请求都是空集合。这是上游没有登记，不是R4把已登记回调删掉，也不是模型读错已提供原文。
+
+修复应落在R1的有限源码单元及静态连接采集，并由R4原有来源恢复/组装接线保存；不能将本体consumer自行搜索R0当作该缺口已修复。2026-10-02的[薄实验](../../supplements/frontend-selection-save-probe-20261002.md)已在两个真实页面及改名fixture上通过：同一parser取得完整选择回调、字面事件、明确mixin调用、实际异步箭头中的直接调用、数据整理和保存封装，并生成两份保留原R4字段的实验入口JSON；5项直接测试及独立原文/重开核验通过，业务模型/JDT/Maven调用为零。四条HTTP方法/路径匹配仍是部署条件未确认的候选，未证明完整变量数据流。正式producer、Schema、CLI与R4均未修改；不建立JavaScript解释器，不据此宣称所有页面或本体识别已通过。
 
 ### 2.2 helper 运行
 
@@ -120,7 +126,7 @@ R4 严格重开 R1 前端索引、R3 持久化及其准确 R2 后端索引，并
 5. 文件名从已校验 entryId 的十六进制部分生成；manifest 限制变长 payload 集合、文件数和容量，继续使用原子发布，不接受任意路径。每入口 JSON 自身可单独严格重开，不要求先打开其它入口的包；索引与覆盖同一个 R4 publication。
 6. 按实际 canonical JSON 字节计量每入口及整体容量。任一单入口或整套输出超限，R4 保存具名失败报告而不发布成功证据集合；不得逐单元削减、截断正文或写伪完整 stub。上游已有未收集范围仍照原限制报告。技术 Markdown 按准确 R4 入口 JSON 展示“页面请求→后端入口→Java调用→Mapper/XML/SQL”，明确静态候选和动态地址；它不是业务办理顺序。
 
-旧 Step05 v2 Builder 目前只把前端单元附在已形成的最多 12 入口 packet，并仅消费 v1 `MATCHED_UNIQUE ENTRY_LINK`；旧 R3 的跨运行重开及 Markdown 已有验证。新 R4 matcher、每入口完整 JSON、独立全仓覆盖与严格 reader 均待实施。无页面的后端入口可能供其它客户端用，不自动判错；Step06/07 未适配新格式时须在模型初始化前拒绝。
+历史Step05 v2 Builder只把前端单元附在最多12入口packet，并仅消费v1 `MATCHED_UNIQUE ENTRY_LINK`；其历史读取保留。新R4 matcher、每入口JSON、独立前端覆盖及严格reader已有固定源码最终产物和正式查询验证；它们只能组织R1实际登记的源码单元，不能据此声称选择回调/保存链已收集。无页面的后端入口可能供其它客户端用，不自动判错；Step06/07未适配新格式时须在模型初始化前拒绝。
 
 ## 7. 验收与扩展停止线
 
@@ -132,4 +138,4 @@ R4 严格重开 R1 前端索引、R3 持久化及其准确 R2 后端索引，并
 - 动态 URL、未知 alias、mixin 歧义、局部坏文件、排除、正式 `DISABLED` R1、`ENABLED` 零请求、无页面入口、无匹配请求及多候选均在正确运行的覆盖中如实保存；容量超限不发布成功入口文件。
 - R4 为每个 entry 生成一个可单独重开的完整 JSON，全仓未匹配请求仍可查询；技术 reader 不重新分析，JDT/Node/业务模型新增调用为零。
 
-如果需要超过§2范围的代码求值才能连上真实例子，先说明具体断点和成熟工具替代方案，不继续堆通用解释规则。固定旧 R1 已发现 51 条请求/链接；新独立 R1 已保存51条请求及包括`getQueryParams`在内的69条完整源码单元，并已通过正式查询重开。地址映射匹配及每入口 JSON 仍待真实R4验收；不能把旧路径的 `MATCHED_UNIQUE` 称为新结果。
+如果需要超过§2范围的代码求值才能连上真实例子，先说明具体断点和成熟工具替代方案，不继续堆通用解释规则。固定旧R1已发现51条请求/链接；最终独立R1已保存51条请求及包括`getQueryParams`在内的69条完整源码单元，最终R4已有339份入口JSON和51条前端覆盖，均已通过正式查询。51条请求仍因运行时地址条件未知而是候选；选择回调/保存链不在这一已验收查询范围。不得把旧路径的`MATCHED_UNIQUE`或查询链通过称为全部页面动作/运行时业务链通过。

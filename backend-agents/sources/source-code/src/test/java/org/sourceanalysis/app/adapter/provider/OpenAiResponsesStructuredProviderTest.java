@@ -82,6 +82,63 @@ class OpenAiResponsesStructuredProviderTest {
     }
   }
 
+  @Test
+  void ontologyRequestSendsRequestedOutputTokensSeparatelyFromResponseByteLimit() throws Exception {
+    AtomicReference<JsonNode> requestBody = new AtomicReference<>();
+    try (HttpServerFixture server =
+        HttpServerFixture.success(
+            exchange -> requestBody.set(JSON.readTree(exchange.getRequestBody())))) {
+      StructuredModelProvider provider =
+          provider(server.endpoint(), "test-api-key", "gpt-5.6-luna", "high");
+      StructuredModelRequest request = ontologyRequest("ontology-token", 64, 37);
+
+      StructuredModelResponse response = provider.generate(request);
+
+      assertThat(response.responseJson().size()).isLessThanOrEqualTo(request.maxOutputBytes());
+      assertThat(request.requestedMaxOutputTokens()).isEqualTo(37);
+      assertThat(requestBody.get().path("max_output_tokens").asInt()).isEqualTo(37);
+      assertThat(server.requestCount()).isEqualTo(1);
+    }
+  }
+
+  @Test
+  void historicalSixFieldRequestKeepsByteDerivedSdkTokenInHttpProjection() throws Exception {
+    AtomicReference<JsonNode> requestBody = new AtomicReference<>();
+    try (HttpServerFixture server =
+        HttpServerFixture.success(
+            exchange -> requestBody.set(JSON.readTree(exchange.getRequestBody())))) {
+      StructuredModelProvider provider =
+          provider(server.endpoint(), "test-api-key", "gpt-5.6-luna", "high");
+      StructuredModelRequest request = request("api-historical-six-field");
+
+      StructuredModelResponse response = provider.generate(request);
+
+      assertThat(request.requestedMaxOutputTokens()).isNull();
+      assertThat(requestBody.get().path("max_output_tokens").asInt())
+          .isEqualTo(request.maxOutputBytes());
+      assertThat(response.responseJson().size()).isLessThanOrEqualTo(request.maxOutputBytes());
+      assertThat(server.requestCount()).isEqualTo(1);
+    }
+  }
+
+  @Test
+  void ontologyTokenProjectionDoesNotDisableIndependentResponseByteCap() throws Exception {
+    AtomicReference<JsonNode> requestBody = new AtomicReference<>();
+    try (HttpServerFixture server =
+        HttpServerFixture.success(
+            exchange -> requestBody.set(JSON.readTree(exchange.getRequestBody())))) {
+      StructuredModelProvider provider =
+          provider(server.endpoint(), "test-api-key", "gpt-5.6-luna", "high");
+      StructuredModelRequest request = ontologyRequest("ontology-byte-cap", 8, 37);
+
+      assertThatThrownBy(() -> provider.generate(request))
+          .isInstanceOf(IllegalStateException.class)
+          .hasMessageContaining("OPENAI_RESPONSES_OUTPUT_TOO_LARGE");
+      assertThat(requestBody.get().path("max_output_tokens").asInt()).isEqualTo(37);
+      assertThat(server.requestCount()).isEqualTo(1);
+    }
+  }
+
   private static StructuredModelRequest request(String taskId) {
     return new StructuredModelRequest(
         taskId,
@@ -94,6 +151,22 @@ class OpenAiResponsesStructuredProviderTest {
                     + "\"required\":[\"answer\"],\"additionalProperties\":false}")
                 .getBytes(StandardCharsets.UTF_8)),
         4_096);
+  }
+
+  private static StructuredModelRequest ontologyRequest(
+      String taskId, int maxOutputBytes, int requestedMaxOutputTokens) {
+    return new StructuredModelRequest(
+        taskId,
+        "ONTOLOGY_FORMAL_OBJECT_EXTRACT",
+        "system instructions",
+        ImmutableBytes.copyOf(
+            "{\"input\":\"untrusted-input-marker\"}".getBytes(StandardCharsets.UTF_8)),
+        ImmutableBytes.copyOf(
+            ("{\"type\":\"object\",\"properties\":{\"answer\":{\"type\":\"string\"}},"
+                    + "\"required\":[\"answer\"],\"additionalProperties\":false}")
+                .getBytes(StandardCharsets.UTF_8)),
+        maxOutputBytes,
+        requestedMaxOutputTokens);
   }
 
   private static StructuredModelProvider provider(
@@ -185,42 +258,42 @@ class OpenAiResponsesStructuredProviderTest {
 
     private static String successfulResponse() {
       return """
-          {
-            "id":"resp_test",
-            "object":"response",
-            "created_at":1,
-            "status":"completed",
-            "error":null,
-            "incomplete_details":null,
-            "instructions":null,
-            "max_output_tokens":4096,
-            "model":"gpt-5.6-luna",
-            "output":[{
-              "id":"msg_test",
-              "type":"message",
-              "status":"completed",
-              "role":"assistant",
-              "content":[{
-                "type":"output_text",
-                "annotations":[],
-                "logprobs":[],
-                "text":"{\\\"answer\\\":\\\"ok\\\"}"
-              }]
-            }],
-            "parallel_tool_calls":true,
-            "previous_response_id":null,
-            "reasoning":{"effort":"high","summary":null},
-            "store":false,
-            "temperature":1,
-            "text":{"format":{"type":"text"}},
-            "tool_choice":"auto",
-            "tools":[],
-            "top_p":1,
-            "truncation":"disabled",
-            "usage":{"input_tokens":1,"input_tokens_details":{"cached_tokens":0},"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":2},
-            "metadata":{}
-          }
-          """;
+      {
+        "id":"resp_test",
+        "object":"response",
+        "created_at":1,
+        "status":"completed",
+        "error":null,
+        "incomplete_details":null,
+        "instructions":null,
+        "max_output_tokens":4096,
+        "model":"gpt-5.6-luna",
+        "output":[{
+          "id":"msg_test",
+          "type":"message",
+          "status":"completed",
+          "role":"assistant",
+          "content":[{
+            "type":"output_text",
+            "annotations":[],
+            "logprobs":[],
+            "text":"{\\\"answer\\\":\\\"ok\\\"}"
+          }]
+        }],
+        "parallel_tool_calls":true,
+        "previous_response_id":null,
+        "reasoning":{"effort":"high","summary":null},
+        "store":false,
+        "temperature":1,
+        "text":{"format":{"type":"text"}},
+        "tool_choice":"auto",
+        "tools":[],
+        "top_p":1,
+        "truncation":"disabled",
+        "usage":{"input_tokens":1,"input_tokens_details":{"cached_tokens":0},"output_tokens":1,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":2},
+        "metadata":{}
+      }
+      """;
     }
 
     private static String incompleteResponse() {

@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "decision",
+    "entrySelection",
+    "clueSelection",
+    "retainedUnitUses",
+    "requiredUnitUses",
+    "actions",
+    "unresolved"
+  ],
+  "$defs": {
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["addRefs", "remove"],
+      "properties": {
+        "addRefs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "remove": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ref", "reason"],
+            "properties": {
+              "ref": {"type": "string", "minLength": 1},
+              "reason": {"type": "string", "minLength": 1}
+            }
+          }
+        }
+      }
+    },
+    "unitUse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unitRef", "entryRef"],
+      "properties": {
+        "unitRef": {"type": "string", "pattern": "^U[1-9][0-9]*$"},
+        "entryRef": {"type": "string", "pattern": "^E[1-9][0-9]*$"}
+      }
+    },
+    "unresolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason", "disposition", "unitUses"],
+      "properties": {
+        "reason": {"type": "string", "minLength": 1},
+        "disposition": {"enum": ["UNRESOLVED", "EXCLUDED_FROM_TASK"]},
+        "unitUses": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/unitUse"}}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"disposition": {"const": "EXCLUDED_FROM_TASK"}}},
+          "then": {"properties": {"unitUses": {"minItems": 1}}}
+        }
+      ]
+    },
+    "query": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "queryKind", "keyRef", "offset", "limit"],
+      "properties": {
+        "kind": {"const": "QUERY"},
+        "queryKind": {"enum": ["ENTRY_UNITS", "METHOD_USES", "STATEMENT_USES", "TABLE_STATEMENTS", "COLUMN_STATEMENTS"]},
+        "keyRef": {"type": "string", "minLength": 1},
+        "offset": {"type": "integer", "minimum": 0},
+        "limit": {"type": "integer", "minimum": 1}
+      }
+    },
+    "literalSearch": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "queryKind", "query", "offset", "limit"],
+      "properties": {
+        "kind": {"const": "QUERY"},
+        "queryKind": {"const": "LITERAL_SEARCH"},
+        "query": {"type": "string", "minLength": 1},
+        "offset": {"type": "integer", "minimum": 0},
+        "limit": {"type": "integer", "minimum": 1}
+      }
+    },
+    "read": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "unitRef", "entryRef"],
+      "properties": {
+        "kind": {"const": "READ"},
+        "unitRef": {"type": "string", "pattern": "^U[1-9][0-9]*$"},
+        "entryRef": {"type": "string", "pattern": "^E[1-9][0-9]*$"}
+      }
+    }
+  },
+  "properties": {
+    "schemaVersion": {"const": "reading-response-v3"},
+    "decision": {"enum": ["NEEDS_MORE_MATERIAL", "READY_TO_EXTRACT", "UNRESOLVED"]},
+    "entrySelection": {"$ref": "#/$defs/selection"},
+    "clueSelection": {"$ref": "#/$defs/selection"},
+    "retainedUnitUses": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/unitUse"}},
+    "requiredUnitUses": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/unitUse"}},
+    "actions": {
+      "type": "array",
+      "items": {"oneOf": [{"$ref": "#/$defs/query"}, {"$ref": "#/$defs/literalSearch"}, {"$ref": "#/$defs/read"}]}
+    },
+    "unresolved": {"type": "array", "items": {"$ref": "#/$defs/unresolved"}}
+  }
+}

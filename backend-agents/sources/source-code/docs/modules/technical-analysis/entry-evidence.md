@@ -1,6 +1,8 @@
 # 按后端入口组织的最终技术证据
 
-状态：2026-09-29 实施中。受限变长存储及超过64个入口的直接测试已通过；入口组装、发布器、读取器和正式R4路径已接线，并在固定源码上生成339份入口文件。可移植源码位置曾在真实产物中失败，最终修正和重开核验尚未完成，**不能称为正式入口证据已交付**。本页拥有新的最终 JSON 合同；[Step05](../../analysis-steps/05-business-flows.md)拥有组装步骤，[运行合同](cli-and-runtime.md)拥有配置、版本与保存接线。历史 `code-reading-material-set-v1/v2` 不改写。
+状态：2026-09-29 工程及固定源码技术交付已完成；最终R4生成339份入口文件、51条前端请求处置，通过严格重开及三类artifact查询，可移植源码位置已修正。运行时地址、全量逐边准确性和长等待根因仍有限制，见[最终验收](../../supplements/technical-entry-evidence-acceptance-20260929.md)。本页拥有最终JSON合同；[Step05](../../analysis-steps/05-business-flows.md)拥有组装步骤，[运行合同](cli-and-runtime.md)拥有配置、版本与保存接线。历史 `code-reading-material-set-v1/v2` 不改写。
+
+唯一拟新增本体消费者见[总体分支设计](../ontology-recognition/README.md)及[实施计划](../../plans/ontology-recognition-implementation-plan.md)：只接本页新R4与同R0，不接旧分析；目前未实现。已有技术证据和人工推导不是自动Ontology结果。
 
 ## 1. 目标与当前差距
 
@@ -12,7 +14,7 @@
 
 ## 2. 输出目录与唯一入口
 
-以下是新版生产路径预定的目录形状；目前尚无固定源码验收批次可以据此宣称完成：
+以下是已实现并在固定源码最终R4核验过的目录形状；内容质量和工具限制另见最终验收，不由目录形状证明：
 
 ```text
 R4 / steps/05-business-flows/
@@ -46,7 +48,7 @@ R4 / steps/05-business-flows/
 
 ## 4. HTTP 匹配放在组装中
 
-历史 `FrontendHttpDiscoverer.link` 比较已解析路径和 HTTP method；新 `EntryEvidenceAssembler` 已实现只消费已保存对象的R4匹配，包括显式配置地址映射和未知地址条件的候选处置，离线直接测试已覆盖，固定源码R4仍待验收。语法读取留在前端发现器，组装不重新启动 Node；匹配结果只在 R4保存，不回写 R1。
+历史 `FrontendHttpDiscoverer.link` 比较已解析路径和HTTP method；新 `EntryEvidenceAssembler`只消费已保存对象做R4匹配，包括显式地址映射和未知条件处置，离线及固定源码最终R4已经验证。固定源码51请求因运行时地址未确认保留为候选，不是已证实部署连通。语法读取留在前端发现器，组装不启动Node；匹配只保存R4，不回写R1。
 
 顺序：请求方法/原URL → 已解析路径与已知地址条件 → 后端 route/methodCondition → 全候选集合。不得按尾部字符串、方法同名、页面词义或第一条结果强连。地址条件仍未知时保留条件；唯一路径候选也不能称为真实部署可达。
 
@@ -151,7 +153,7 @@ R1 请求 ID 集合 = frontend coverage 请求 ID 集合
 
 `artifact`增加版本明确的 ENTRY_EVIDENCE_INDEX、ENTRY_EVIDENCE（要求完整entryId）、FRONTEND_EVIDENCE_COVERAGE查询键，保留既有public Agent方法。按入口ID查文件，不增加任意磁盘路径读取。目录导出是已保存payload逐字复制及既有回执，不新跑分析；未来消费者从index定位JSON，不必解析技术Markdown或手工关联五份上游索引。
 
-旧Packet reader、旧技术Markdown、M10、326/418 Activity及业务结果严格按历史schema读取。当前Activity/Step07未适配新入口证据时，在Provider初始化前拒绝；不能把一个入口JSON偷偷包装成旧Packet。业务适配另行设计。
+旧Packet reader、旧技术Markdown、M10、326/418 Activity及业务结果保持独立历史读取。旧Activity/Process路由未适配R4时在Provider初始化前拒绝，不把入口JSON包装成旧Packet。新本体是直接证据consumer，不做这些兼容，不受旧业务路由门禁误拦；自身严格准入由本体合同拥有。
 
 ## 10. 直接验收
 

@@ -1,6 +1,7 @@
 package org.sourceanalysis.app.analysis.material.publish;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.ByteBuffer;
@@ -18,6 +19,9 @@ import org.sourceanalysis.app.analysis.discovery.ApplicationDiscoveryReference;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpIndex;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpIndexModulePublisher;
 import org.sourceanalysis.app.analysis.discovery.frontend.FrontendHttpRequestRecord;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendPageContext;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendPageSourceUnit;
+import org.sourceanalysis.app.analysis.discovery.frontend.FrontendSourceUnits;
 import org.sourceanalysis.app.analysis.graph.ProgramGraphsReference;
 import org.sourceanalysis.app.analysis.inventory.PreparedSourceReference;
 import org.sourceanalysis.app.analysis.inventory.VerifiedSourceInventoryReference;
@@ -71,6 +75,11 @@ public final class EntryEvidencePublisher {
   public static final String COVERAGE_FILE = "frontend-coverage.jsonl";
   public static final String COVERAGE_TYPE = "FRONTEND_EVIDENCE_COVERAGE";
   public static final String COVERAGE_SCHEMA = "frontend-evidence-coverage-v1";
+  public static final String V2_MODULE_VERSION = "v4";
+  public static final String V2_PRODUCER = "entry-evidence-v2";
+  public static final String V2_ENTRY_SCHEMA = "entry-evidence-v2";
+  public static final String V2_INDEX_SCHEMA = "entry-evidence-index-v2";
+  public static final String V2_COVERAGE_SCHEMA = "frontend-evidence-coverage-v2";
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
   private static final Comparator<String> UTF8_ORDER = EntryEvidencePublisher::compareUtf8;
@@ -78,16 +87,36 @@ public final class EntryEvidencePublisher {
   private final CanonicalModuleArtifactStore modules;
   private final CanonicalAnalysisStepArtifactStore steps;
   private final CanonicalAnalysisStepArtifactStore sourceSteps;
+  private final CanonicalAnalysisStepArtifactStore backendSteps;
+  private final CanonicalAnalysisStepArtifactStore persistenceSteps;
   private final CanonicalJsonCodec json = new CanonicalJsonCodec();
 
   public EntryEvidencePublisher(
       CanonicalModuleArtifactStore modules,
       CanonicalAnalysisStepArtifactStore steps,
       CanonicalAnalysisStepArtifactStore sourceSteps) {
+    this(modules, steps, sourceSteps, steps, steps);
+  }
+
+  /**
+   * Uses explicit saved R2 and R3 stores when an R4 producer cites predecessors governed by
+   * distinct policy registries. The three-argument constructor retains the historical single-store
+   * behavior.
+   */
+  public EntryEvidencePublisher(
+      CanonicalModuleArtifactStore modules,
+      CanonicalAnalysisStepArtifactStore steps,
+      CanonicalAnalysisStepArtifactStore sourceSteps,
+      CanonicalAnalysisStepArtifactStore backendSteps,
+      CanonicalAnalysisStepArtifactStore persistenceSteps) {
     this.modules = Objects.requireNonNull(modules, "entry-evidence module store");
     this.steps = Objects.requireNonNull(steps, "entry-evidence analysis-step store");
     this.sourceSteps =
         Objects.requireNonNull(sourceSteps, "entry-evidence source analysis-step store");
+    this.backendSteps =
+        Objects.requireNonNull(backendSteps, "entry-evidence backend analysis-step store");
+    this.persistenceSteps =
+        Objects.requireNonNull(persistenceSteps, "entry-evidence persistence analysis-step store");
   }
 
   /**
@@ -123,7 +152,8 @@ public final class EntryEvidencePublisher {
           || !set.header().applicationDiscovery().equals(discovery)
           || !set.header().navigationPublication().equals(navigation)
           || !set.header().persistencePublication().equals(persistence)
-          || !set.header().frontendPublication().equals(frontend)) {
+          || !set.header().frontendPublication().equals(frontend)
+          || !set.frontendPageContextCoverage().isEmpty()) {
         throw invalid();
       }
       if (sourceBasis.kind() != SelectedSourceBasis.Kind.PREPARED_V1
@@ -211,12 +241,135 @@ public final class EntryEvidencePublisher {
     }
   }
 
+  /**
+   * Installs the additive R4 v2 entry-evidence family from an exact R1 v3 frontend index.
+   *
+   * <p>The v1 method remains its own strict path: it reopens only R1 v2 and retains its original
+   * module/version/schema bytes. This method restores the finite page contexts from the saved R1 v3
+   * index and projects their existing request membership without claiming selection-to-save
+   * causality.
+   */
+  public AnalysisStepPublicationReference publishTechnicalV4(
+      AnalysisRunId destinationRun,
+      VerifiedSourceInventoryReference source,
+      SelectedSourceBasis sourceBasis,
+      ApplicationDiscoveryReference discovery,
+      ProgramGraphsReference navigation,
+      AnalysisStepPublicationReference persistence,
+      ModulePublicationReference frontend,
+      ArtifactControls frontendControls,
+      ArtifactControls backendControls,
+      ArtifactControls persistenceControls,
+      ArtifactControls r4Controls,
+      EntryEvidenceSet set) {
+    try {
+      Objects.requireNonNull(destinationRun, "R4 destination run");
+      Objects.requireNonNull(source, "R0 source inventory");
+      Objects.requireNonNull(sourceBasis, "R0 selected source basis");
+      Objects.requireNonNull(discovery, "R2 application discovery");
+      Objects.requireNonNull(navigation, "R2 Java navigation");
+      Objects.requireNonNull(persistence, "R3 persistence publication");
+      Objects.requireNonNull(frontend, "R1 frontend publication");
+      Objects.requireNonNull(frontendControls, "frontend R1 controls");
+      Objects.requireNonNull(backendControls, "R2 controls");
+      Objects.requireNonNull(persistenceControls, "R3 controls");
+      Objects.requireNonNull(r4Controls, "R4 controls");
+      Objects.requireNonNull(set, "entry-evidence set");
+      if (!set.header().sourceInventory().equals(source)
+          || !set.header().applicationDiscovery().equals(discovery)
+          || !set.header().navigationPublication().equals(navigation)
+          || !set.header().persistencePublication().equals(persistence)
+          || !set.header().frontendPublication().equals(frontend)
+          || sourceBasis.kind() != SelectedSourceBasis.Kind.PREPARED_V1
+          || !sourceBasis.preparedSource().publication().equals(source.publication())
+          || !sourceBasis.snapshotId().value().equals(set.header().sourceSnapshotId())) {
+        throw invalid();
+      }
+      ReopenedAnalysisStepPublication sourceStep =
+          reopen(source.publication(), AnalysisStepKey.VERIFIED_SOURCE_INVENTORY, sourceSteps);
+      ReopenedAnalysisStepPublication discoveryStep =
+          reopen(discovery.publication(), AnalysisStepKey.APPLICATION_DISCOVERY, backendSteps);
+      ReopenedAnalysisStepPublication navigationStep =
+          reopen(navigation.publication(), AnalysisStepKey.PROGRAM_GRAPHS, backendSteps);
+      ReopenedAnalysisStepPublication persistenceStep =
+          reopen(persistence, AnalysisStepKey.PROVEN_CODE_FACTS, persistenceSteps);
+      ReopenedModulePublication frontendModule = modules.reopen(frontend);
+      if (!(frontend.address() instanceof AnalysisStepModuleAddress frontendAddress)) {
+        throw invalid();
+      }
+      FrontendHttpIndex frontendIndex =
+          new FrontendHttpIndexModulePublisher(modules)
+              .reopenV3(frontend, frontendAddress.runId(), sourceBasis, frontendControls);
+      EntryEvidenceSet versionedSet = withFrontendPageContexts(set, frontendIndex);
+      requireFrontendDenominator(versionedSet, frontendIndex);
+      requireFrontendPageContexts(versionedSet, frontendIndex);
+      requireTechnicalPredecessors(
+          destinationRun,
+          sourceStep,
+          discoveryStep,
+          navigationStep,
+          persistenceStep,
+          frontendModule,
+          frontend,
+          frontendControls,
+          backendControls,
+          persistenceControls);
+
+      List<CanonicalModulePayload> payloads = payloadsV2(versionedSet, sourceBasis);
+      requireBudget(payloads, versionedSet);
+      AnalysisStepModuleAddress address =
+          new AnalysisStepModuleAddress(
+              destinationRun, AnalysisStepKey.BUSINESS_FLOWS, 4, MODULE_KEY);
+      InstalledModulePublication module =
+          modules.install(
+              new ModuleInstallRequest(
+                  address,
+                  V2_MODULE_VERSION,
+                  upstreamPayloadReferences(
+                      sourceStep, discoveryStep, navigationStep, persistenceStep, frontendModule),
+                  r4Controls,
+                  ModuleCompletionStatus.SUCCEEDED,
+                  List.of(),
+                  payloads));
+      InstalledAnalysisStepPublication step =
+          steps.install(
+              new AnalysisStepInstallRequest(
+                  new AnalysisStepPublicationAddress(
+                      destinationRun, AnalysisStepKey.BUSINESS_FLOWS),
+                  new AnalysisStepPublisherModuleProvenance(module.reference()),
+                  List.of(
+                      sourceStep.reference(),
+                      discoveryStep.reference(),
+                      navigationStep.reference(),
+                      persistenceStep.reference()),
+                  r4Controls,
+                  ModuleCompletionStatus.SUCCEEDED,
+                  List.of(),
+                  payloads.stream().map(EntryEvidencePublisher::stepPayload).toList(),
+                  null));
+      ReopenedAnalysisStepPublication reopened = steps.reopen(step.reference());
+      if (!reopened.reference().equals(step.reference())
+          || !reopened.receipt().controls().equals(r4Controls)
+          || reopened.semanticPayloads().size() != payloads.size()) {
+        throw invalid();
+      }
+      return step.reference();
+    } catch (RuntimeException failure) {
+      if (failure instanceof CapacityExceededException
+          || (failure instanceof IllegalArgumentException
+              && "ENTRY_EVIDENCE_PUBLICATION_INVALID".equals(failure.getMessage()))) {
+        throw failure;
+      }
+      throw invalid(failure);
+    }
+  }
+
   private List<CanonicalModulePayload> payloads(
       EntryEvidenceSet set, SelectedSourceBasis sourceBasis) {
     List<CanonicalModulePayload> payloads = new ArrayList<>();
     ObjectNode header = headerDocument(set.header(), sourceBasis);
     for (EntryEvidenceSet.Entry entry : set.entries()) {
-      ObjectNode document = entryDocument(entry, header);
+      ObjectNode document = entryDocumentV1(entry, header);
       document.put("schemaVersion", ENTRY_SCHEMA);
       document.put("producer", PRODUCER);
       document.set("header", header.deepCopy());
@@ -245,18 +398,61 @@ public final class EntryEvidencePublisher {
     return List.copyOf(payloads);
   }
 
+  private List<CanonicalModulePayload> payloadsV2(
+      EntryEvidenceSet set, SelectedSourceBasis sourceBasis) {
+    List<CanonicalModulePayload> payloads = new ArrayList<>();
+    ObjectNode header = headerDocumentV2(set, sourceBasis);
+    for (EntryEvidenceSet.Entry entry : set.entries()) {
+      ObjectNode document = entryDocumentV2(entry, header);
+      document.put("schemaVersion", V2_ENTRY_SCHEMA);
+      document.put("producer", V2_PRODUCER);
+      document.set("header", header.deepCopy());
+      payloads.add(
+          standalonePayload(entryFileName(entry.entryId()), ENTRY_TYPE, V2_ENTRY_SCHEMA, document));
+    }
+    ObjectNode index = JsonNodeFactory.instance.objectNode();
+    index.put("schemaVersion", V2_INDEX_SCHEMA);
+    index.put("producer", V2_PRODUCER);
+    index.set("header", header.deepCopy());
+    var entries = index.putArray("entries");
+    for (EntryEvidenceSet.Entry entry : set.entries()) {
+      ObjectNode item = entries.addObject();
+      item.put("entryId", entry.entryId());
+      item.put("file", entryFileName(entry.entryId()));
+      item.put("assemblyStatus", entry.assemblyStatus().name());
+      item.put("route", entry.entry().route());
+      item.set("methodCondition", MAPPER.valueToTree(entry.entry().methodCondition()));
+      item.put("handlerFqn", entry.entry().handlerFqn());
+      item.put("methodKey", entry.entry().methodKey());
+      item.put("limitationCount", entry.limitations().size());
+    }
+    payloads.add(standalonePayload(INDEX_FILE, INDEX_TYPE, V2_INDEX_SCHEMA, index));
+    payloads.add(coveragePayloadV2(set, header));
+    payloads.sort(Comparator.comparing(CanonicalModulePayload::fileName, UTF8_ORDER));
+    return List.copyOf(payloads);
+  }
+
   /**
    * Writes the self-contained entry contract explicitly instead of relying on a consumer to infer
    * its R0/R1/R2/R3 lineage from the adjacent directory header. The duplicated values are checked
    * by {@link EntryEvidenceReader} on every reopen.
    */
-  private static ObjectNode entryDocument(EntryEvidenceSet.Entry entry, ObjectNode header) {
+  private static ObjectNode entryDocumentV1(EntryEvidenceSet.Entry entry, ObjectNode header) {
+    return entryDocument(entry, header, frontendDocumentV1(entry.frontend()));
+  }
+
+  private static ObjectNode entryDocumentV2(EntryEvidenceSet.Entry entry, ObjectNode header) {
+    return entryDocument(entry, header, MAPPER.valueToTree(entry.frontend()));
+  }
+
+  private static ObjectNode entryDocument(
+      EntryEvidenceSet.Entry entry, ObjectNode header, ObjectNode frontend) {
     ObjectNode document = JsonNodeFactory.instance.objectNode();
     document.put("entryId", entry.entryId());
     document.set("entry", httpEntry(entry.entry()));
     document.put("assemblyStatus", entry.assemblyStatus().name());
     document.set("coverage", MAPPER.valueToTree(entry.coverage()));
-    document.set("frontend", MAPPER.valueToTree(entry.frontend()));
+    document.set("frontend", frontend);
     document.set("java", MAPPER.valueToTree(entry.java()));
     document.set("persistence", MAPPER.valueToTree(entry.persistence()));
     document.set("limitations", MAPPER.valueToTree(entry.limitations()));
@@ -269,6 +465,35 @@ public final class EntryEvidencePublisher {
     // Keep this explicit even though it is also a record component: an entry document is a
     // standalone wire contract, not an accidental Jackson projection of an implementation type.
     document.set("sourceRefs", MAPPER.valueToTree(entry.sourceRefs()));
+    return document;
+  }
+
+  /** V1 remains a closed wire shape even though the in-memory DTO has additive v2 components. */
+  private static ObjectNode frontendDocumentV1(EntryEvidenceSet.Frontend frontend) {
+    ObjectNode document = JsonNodeFactory.instance.objectNode();
+    ArrayNode requestUses = document.putArray("requestUses");
+    frontend.requestUses().forEach(use -> requestUses.add(requestUseDocumentV1(use)));
+    ArrayNode candidateRequestUses = document.putArray("candidateRequestUses");
+    frontend
+        .candidateRequestUses()
+        .forEach(use -> candidateRequestUses.add(requestUseDocumentV1(use)));
+    document.set("units", MAPPER.valueToTree(frontend.units()));
+    return document;
+  }
+
+  private static ObjectNode requestUseDocumentV1(EntryEvidenceSet.RequestUse use) {
+    ObjectNode document = JsonNodeFactory.instance.objectNode();
+    document.set("request", MAPPER.valueToTree(use.request()));
+    document.put("resolution", use.resolution().name());
+    ArrayNode candidates = document.putArray("candidateEntryIds");
+    use.candidateEntryIds().forEach(candidates::add);
+    ArrayNode sourceUnitIds = document.putArray("sourceUnitIds");
+    use.sourceUnitIds().forEach(sourceUnitIds::add);
+    if (use.reason() == null) {
+      document.putNull("reason");
+    } else {
+      document.put("reason", use.reason());
+    }
     return document;
   }
 
@@ -363,6 +588,13 @@ public final class EntryEvidencePublisher {
     return document;
   }
 
+  private static ObjectNode headerDocumentV2(
+      EntryEvidenceSet set, SelectedSourceBasis sourceBasis) {
+    ObjectNode document = headerDocument(set.header(), sourceBasis);
+    document.put("frontendPageContextCount", set.frontendPageContextCoverage().size());
+    return document;
+  }
+
   private static ObjectNode publicationNode(PreparedSourceReference prepared) {
     var publication = prepared.publication();
     ObjectNode node = MAPPER.createObjectNode();
@@ -444,6 +676,44 @@ public final class EntryEvidencePublisher {
   }
 
   /**
+   * The v2 coverage wire retains page-context membership even for a uniquely matched request.
+   * Version one deliberately compacts that case to an entry file, so its bytes and reader contract
+   * remain unchanged.
+   */
+  private CanonicalModulePayload coveragePayloadV2(
+      EntryEvidenceSet set, ObjectNode headerDocument) {
+    StringBuilder content = new StringBuilder();
+    ObjectNode header = JsonNodeFactory.instance.objectNode();
+    header.put("schemaVersion", V2_COVERAGE_SCHEMA);
+    header.put("recordType", "HEADER");
+    header.put("producer", V2_PRODUCER);
+    header.set("header", headerDocument.deepCopy());
+    appendJsonLine(content, header);
+    for (EntryEvidenceSet.FrontendCoverage coverage : set.frontendCoverage()) {
+      ObjectNode line = JsonNodeFactory.instance.objectNode();
+      line.put("schemaVersion", V2_COVERAGE_SCHEMA);
+      line.put("recordType", "REQUEST_COVERAGE");
+      line.set("payload", MAPPER.valueToTree(coverage));
+      appendJsonLine(content, line);
+    }
+    for (EntryEvidenceSet.FrontendPageContextCoverage coverage :
+        set.frontendPageContextCoverage()) {
+      ObjectNode line = JsonNodeFactory.instance.objectNode();
+      line.put("schemaVersion", V2_COVERAGE_SCHEMA);
+      line.put("recordType", "PAGE_CONTEXT_COVERAGE");
+      line.set("payload", MAPPER.valueToTree(coverage));
+      appendJsonLine(content, line);
+    }
+    return payload(
+        COVERAGE_FILE,
+        COVERAGE_TYPE,
+        V2_COVERAGE_SCHEMA,
+        CanonicalMediaType.APPLICATION_X_NDJSON,
+        ImmutableBytes.copyOf(content.toString().getBytes(StandardCharsets.UTF_8)),
+        "canonical-jsonl-artifact-id-v1");
+  }
+
+  /**
    * A uniquely included request is represented by its verified entry file, not a second copy of its
    * complete frontend evidence. All other resolutions retain the original request and source units
    * because the coverage line is their only durable destination.
@@ -463,7 +733,25 @@ public final class EntryEvidencePublisher {
       document.put("entryFile", entryFileName(coverage.includedEntryIds().get(0)));
       return document;
     }
-    return MAPPER.valueToTree(coverage);
+    return coverageDocumentV1(coverage);
+  }
+
+  private static ObjectNode coverageDocumentV1(EntryEvidenceSet.FrontendCoverage coverage) {
+    ObjectNode document = JsonNodeFactory.instance.objectNode();
+    document.put("requestId", coverage.requestId());
+    document.set("request", MAPPER.valueToTree(coverage.request()));
+    document.put("resolution", coverage.resolution().name());
+    ArrayNode entries = document.putArray("entryIds");
+    coverage.entryIds().forEach(entries::add);
+    ArrayNode includedEntries = document.putArray("includedEntryIds");
+    coverage.includedEntryIds().forEach(includedEntries::add);
+    document.set("units", MAPPER.valueToTree(coverage.units()));
+    if (coverage.reason() == null) {
+      document.putNull("reason");
+    } else {
+      document.put("reason", coverage.reason());
+    }
+    return document;
   }
 
   private void appendJsonLine(StringBuilder content, ObjectNode line) {
@@ -600,6 +888,300 @@ public final class EntryEvidencePublisher {
         throw invalid();
       }
     }
+  }
+
+  /**
+   * Rehydrates the finite R1 v3 context collection into an otherwise valid assembled R4 set.
+   * Membership is only the saved {@code context.requestIds()} relation; it is not a data-flow or
+   * selection-to-save conclusion.
+   */
+  private static EntryEvidenceSet withFrontendPageContexts(
+      EntryEvidenceSet set, FrontendHttpIndex index) {
+    List<FrontendPageContext> pageContexts = List.copyOf(index.pageContexts());
+    Map<String, List<String>> contextIdsByRequest = contextIdsByRequest(pageContexts);
+    Map<String, FrontendPageContext> pageContextsById = pageContextsById(pageContexts);
+    List<EntryEvidenceSet.Entry> entries =
+        set.entries().stream()
+            .map(
+                entry ->
+                    new EntryEvidenceSet.Entry(
+                        entry.entryId(),
+                        entry.entry(),
+                        entry.assemblyStatus(),
+                        entry.coverage(),
+                        withFrontendPageContexts(
+                            entry.frontend(), contextIdsByRequest, pageContextsById),
+                        entry.java(),
+                        entry.persistence(),
+                        entry.sourceRefs(),
+                        entry.limitations()))
+            .toList();
+    List<EntryEvidenceSet.FrontendCoverage> coverage =
+        set.frontendCoverage().stream()
+            .map(value -> withFrontendPageContexts(value, contextIdsByRequest))
+            .toList();
+    List<EntryEvidenceSet.FrontendPageContextCoverage> pageContextCoverage =
+        withFrontendPageContextCoverage(
+            set.frontendPageContextCoverage(), pageContexts, entries, coverage);
+    return new EntryEvidenceSet(set.header(), entries, coverage, pageContextCoverage);
+  }
+
+  private static List<EntryEvidenceSet.FrontendPageContextCoverage> withFrontendPageContextCoverage(
+      List<EntryEvidenceSet.FrontendPageContextCoverage> existing,
+      List<FrontendPageContext> pageContexts,
+      List<EntryEvidenceSet.Entry> entries,
+      List<EntryEvidenceSet.FrontendCoverage> requestCoverage) {
+    Map<String, EntryEvidenceSet.FrontendPageContextCoverage> existingById = new LinkedHashMap<>();
+    Map<String, FrontendSourceUnits.Unit> availableUnits = new LinkedHashMap<>();
+    for (EntryEvidenceSet.Entry entry : entries) {
+      entry.frontend().units().forEach(unit -> putFrontendUnit(availableUnits, unit));
+    }
+    for (EntryEvidenceSet.FrontendCoverage coverage : requestCoverage) {
+      coverage.units().forEach(unit -> putFrontendUnit(availableUnits, unit));
+    }
+    for (EntryEvidenceSet.FrontendPageContextCoverage coverage : existing) {
+      if (existingById.putIfAbsent(coverage.contextId(), coverage) != null) {
+        throw invalid();
+      }
+      coverage.units().forEach(unit -> putFrontendUnit(availableUnits, unit));
+    }
+    List<EntryEvidenceSet.FrontendPageContextCoverage> values = new ArrayList<>();
+    for (FrontendPageContext context :
+        pageContexts.stream()
+            .sorted(Comparator.comparing(FrontendPageContext::contextId, UTF8_ORDER))
+            .toList()) {
+      boolean requestMembership = !context.requestIds().isEmpty();
+      EntryEvidenceSet.FrontendPageContextCoverage expected =
+          new EntryEvidenceSet.FrontendPageContextCoverage(
+              context.contextId(),
+              context,
+              contextUnits(context, availableUnits),
+              includedEntryIds(context.contextId(), entries),
+              requestMembership
+                  ? EntryEvidenceSet.FrontendPageContextCoverage.Disposition.REQUEST_MEMBERSHIP
+                  : EntryEvidenceSet.FrontendPageContextCoverage.Disposition.NO_REQUEST_MEMBERSHIP,
+              requestMembership ? null : "no saved HTTP request member");
+      EntryEvidenceSet.FrontendPageContextCoverage actual =
+          existingById.remove(context.contextId());
+      if (actual != null && !actual.equals(expected)) {
+        throw invalid();
+      }
+      values.add(expected);
+    }
+    if (!existingById.isEmpty()) {
+      throw invalid();
+    }
+    return List.copyOf(values);
+  }
+
+  private static void putFrontendUnit(
+      Map<String, FrontendSourceUnits.Unit> units, FrontendSourceUnits.Unit unit) {
+    FrontendSourceUnits.Unit previous = units.putIfAbsent(unit.sourceUnitId(), unit);
+    if (previous != null && !previous.equals(unit)) {
+      throw invalid();
+    }
+  }
+
+  private static List<FrontendSourceUnits.Unit> contextUnits(
+      FrontendPageContext context, Map<String, FrontendSourceUnits.Unit> availableUnits) {
+    Map<String, FrontendSourceUnits.Unit> selected = new LinkedHashMap<>();
+    for (FrontendPageSourceUnit sourceUnit : context.sourceUnits()) {
+      List<FrontendSourceUnits.Unit> matches =
+          availableUnits.values().stream()
+              .filter(unit -> sourceUnit.sourcePath().equals(unit.path()))
+              .filter(unit -> sourceUnit.sourceSha256().equals(unit.sourceSha256()))
+              .filter(unit -> sourceUnit.sourceUnitRange().equals(unit.sourceUnitRange()))
+              .filter(unit -> sourceUnit.sourceUnitKind() == unit.sourceUnitKind())
+              .toList();
+      if (matches.size() != 1) {
+        throw invalid();
+      }
+      FrontendSourceUnits.Unit prior =
+          selected.putIfAbsent(matches.get(0).sourceUnitId(), matches.get(0));
+      if (prior != null && !prior.equals(matches.get(0))) {
+        throw invalid();
+      }
+    }
+    return selected.values().stream()
+        .sorted(Comparator.comparing(FrontendSourceUnits.Unit::sourceUnitId, UTF8_ORDER))
+        .toList();
+  }
+
+  private static List<String> includedEntryIds(
+      String contextId, List<EntryEvidenceSet.Entry> entries) {
+    return entries.stream()
+        .filter(
+            entry ->
+                entry.frontend().pageContexts().stream()
+                    .anyMatch(context -> contextId.equals(context.contextId())))
+        .map(EntryEvidenceSet.Entry::entryId)
+        .sorted(UTF8_ORDER)
+        .toList();
+  }
+
+  private static EntryEvidenceSet.Frontend withFrontendPageContexts(
+      EntryEvidenceSet.Frontend frontend,
+      Map<String, List<String>> contextIdsByRequest,
+      Map<String, FrontendPageContext> pageContextsById) {
+    List<EntryEvidenceSet.RequestUse> requestUses =
+        withFrontendPageContexts(frontend.requestUses(), contextIdsByRequest);
+    List<EntryEvidenceSet.RequestUse> candidateRequestUses =
+        withFrontendPageContexts(frontend.candidateRequestUses(), contextIdsByRequest);
+    List<FrontendPageContext> pageContexts =
+        pageContextsFor(requestUses, candidateRequestUses, pageContextsById);
+    if (!frontend.pageContexts().isEmpty() && !frontend.pageContexts().equals(pageContexts)) {
+      throw invalid();
+    }
+    return new EntryEvidenceSet.Frontend(
+        requestUses, candidateRequestUses, frontend.units(), pageContexts);
+  }
+
+  private static List<EntryEvidenceSet.RequestUse> withFrontendPageContexts(
+      List<EntryEvidenceSet.RequestUse> uses, Map<String, List<String>> contextIdsByRequest) {
+    return uses.stream()
+        .map(
+            use -> {
+              List<String> contextIds =
+                  contextIdsFor(use.request().requestId(), contextIdsByRequest);
+              if (!use.pageContexts().isEmpty() && !use.pageContexts().equals(contextIds)) {
+                throw invalid();
+              }
+              return new EntryEvidenceSet.RequestUse(
+                  use.request(),
+                  use.resolution(),
+                  use.candidateEntryIds(),
+                  use.sourceUnitIds(),
+                  contextIds,
+                  use.reason());
+            })
+        .toList();
+  }
+
+  private static EntryEvidenceSet.FrontendCoverage withFrontendPageContexts(
+      EntryEvidenceSet.FrontendCoverage coverage, Map<String, List<String>> contextIdsByRequest) {
+    List<String> contextIds = contextIdsFor(coverage.requestId(), contextIdsByRequest);
+    if (!coverage.pageContexts().isEmpty() && !coverage.pageContexts().equals(contextIds)) {
+      throw invalid();
+    }
+    return new EntryEvidenceSet.FrontendCoverage(
+        coverage.requestId(),
+        coverage.request(),
+        coverage.resolution(),
+        coverage.entryIds(),
+        coverage.includedEntryIds(),
+        coverage.units(),
+        contextIds,
+        coverage.reason());
+  }
+
+  private static Map<String, List<String>> contextIdsByRequest(
+      List<FrontendPageContext> pageContexts) {
+    Map<String, List<String>> values = new LinkedHashMap<>();
+    for (FrontendPageContext context : pageContexts) {
+      for (String requestId : context.requestIds()) {
+        values.computeIfAbsent(requestId, ignored -> new ArrayList<>()).add(context.contextId());
+      }
+    }
+    values.replaceAll((requestId, contextIds) -> contextIds.stream().sorted(UTF8_ORDER).toList());
+    return Map.copyOf(values);
+  }
+
+  private static List<String> contextIdsFor(
+      String requestId, Map<String, List<String>> contextIdsByRequest) {
+    return contextIdsByRequest.getOrDefault(requestId, List.of());
+  }
+
+  private static Map<String, FrontendPageContext> pageContextsById(
+      List<FrontendPageContext> pageContexts) {
+    Map<String, FrontendPageContext> values = new LinkedHashMap<>();
+    for (FrontendPageContext context : pageContexts) {
+      if (values.putIfAbsent(context.contextId(), context) != null) {
+        throw invalid();
+      }
+    }
+    return Map.copyOf(values);
+  }
+
+  private static List<FrontendPageContext> pageContextsFor(
+      List<EntryEvidenceSet.RequestUse> requestUses,
+      List<EntryEvidenceSet.RequestUse> candidateRequestUses,
+      Map<String, FrontendPageContext> pageContextsById) {
+    Map<String, FrontendPageContext> selected = new LinkedHashMap<>();
+    java.util.stream.Stream.concat(requestUses.stream(), candidateRequestUses.stream())
+        .flatMap(use -> use.pageContexts().stream())
+        .forEach(
+            contextId -> {
+              FrontendPageContext context = pageContextsById.get(contextId);
+              if (context == null) {
+                throw invalid();
+              }
+              selected.putIfAbsent(contextId, context);
+            });
+    return selected.values().stream()
+        .sorted(Comparator.comparing(FrontendPageContext::contextId, UTF8_ORDER))
+        .toList();
+  }
+
+  private static void requireFrontendPageContexts(EntryEvidenceSet set, FrontendHttpIndex index) {
+    List<FrontendPageContext> pageContexts = List.copyOf(index.pageContexts());
+    Map<String, List<String>> contextIdsByRequest = contextIdsByRequest(pageContexts);
+    Map<String, FrontendPageContext> pageContextsById = pageContextsById(pageContexts);
+    for (EntryEvidenceSet.Entry entry : set.entries()) {
+      EntryEvidenceSet.Frontend frontend = entry.frontend();
+      if (!frontend
+              .pageContexts()
+              .equals(
+                  pageContextsFor(
+                      frontend.requestUses(), frontend.candidateRequestUses(), pageContextsById))
+          || !hasExpectedPageContexts(frontend.requestUses(), contextIdsByRequest)
+          || !hasExpectedPageContexts(frontend.candidateRequestUses(), contextIdsByRequest)) {
+        throw invalid();
+      }
+    }
+    for (EntryEvidenceSet.FrontendCoverage coverage : set.frontendCoverage()) {
+      if (!coverage
+          .pageContexts()
+          .equals(contextIdsFor(coverage.requestId(), contextIdsByRequest))) {
+        throw invalid();
+      }
+    }
+    Map<String, EntryEvidenceSet.FrontendPageContextCoverage> coverageByContext =
+        new LinkedHashMap<>();
+    for (EntryEvidenceSet.FrontendPageContextCoverage coverage :
+        set.frontendPageContextCoverage()) {
+      if (coverageByContext.putIfAbsent(coverage.contextId(), coverage) != null) {
+        throw invalid();
+      }
+    }
+    if (!coverageByContext.keySet().equals(pageContextsById.keySet())) {
+      throw invalid();
+    }
+    for (FrontendPageContext context : pageContexts) {
+      EntryEvidenceSet.FrontendPageContextCoverage coverage =
+          coverageByContext.get(context.contextId());
+      boolean requestMembership = !context.requestIds().isEmpty();
+      if (coverage == null
+          || !coverage.context().equals(context)
+          || !coverage
+              .includedEntryIds()
+              .equals(includedEntryIds(context.contextId(), set.entries()))
+          || coverage.disposition()
+              != (requestMembership
+                  ? EntryEvidenceSet.FrontendPageContextCoverage.Disposition.REQUEST_MEMBERSHIP
+                  : EntryEvidenceSet.FrontendPageContextCoverage.Disposition.NO_REQUEST_MEMBERSHIP)
+          || (!requestMembership && coverage.reason() == null)) {
+        throw invalid();
+      }
+    }
+  }
+
+  private static boolean hasExpectedPageContexts(
+      List<EntryEvidenceSet.RequestUse> uses, Map<String, List<String>> contextIdsByRequest) {
+    return uses.stream()
+        .allMatch(
+            use ->
+                use.pageContexts()
+                    .equals(contextIdsFor(use.request().requestId(), contextIdsByRequest)));
   }
 
   private static boolean usesSavedRequests(

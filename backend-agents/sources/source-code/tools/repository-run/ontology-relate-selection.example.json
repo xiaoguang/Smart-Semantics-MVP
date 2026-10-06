@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "ontology-selection-v2",
+  "operation": "RELATE",
+  "corpusRun": "analysis-run:0000000000000000000000000000000000000000000000000000000000000000",
+  "identificationRuns": [
+    "analysis-run:1111111111111111111111111111111111111111111111111111111111111111"
+  ],
+  "questions": [
+    {
+      "questionId": "Q1-relation",
+      "question": "What relation is supported between the selected reviewed objects?",
+      "taskId": "relate-Q1",
+      "readingMode": "EXPLICIT",
+      "entryRefs": ["E1"],
+      "clueRefs": [],
+      "unitUses": [{"unitRef": "U1", "entryRef": "E1"}],
+      "requiredUnitUses": [{"unitRef": "U1", "entryRef": "E1"}],
+      "objectSources": [
+        {
+          "identificationRun": "analysis-run:1111111111111111111111111111111111111111111111111111111111111111",
+          "questionId": "Q1"
+        }
+      ]
+    }
+  ]
+}

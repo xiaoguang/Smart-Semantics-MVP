@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "ontology-scope-v3",
+  "purpose": "ENRICHMENT",
+  "mode": "QUESTION",
+  "selectionMode": "EXPLICIT",
+  "questions": [
+    {
+      "questionId": "reviewed-endpoint-operations",
+      "question": "Which operations act on these reviewed endpoint objects? Read the relevant complete implementations and preserve unsupported conditions as unknown.",
+      "entryRefs": ["E1"],
+      "clueRefs": [],
+      "objectSources": [
+        {
+          "identificationRun": "analysis-run:1111111111111111111111111111111111111111111111111111111111111111",
+          "questionId": "saved-reference-connection",
+          "taskIds": ["joint-link"]
+        }
+      ],
+      "tasks": [
+        {
+          "taskId": "operations",
+          "taskKind": "ACTION",
+          "readingMode": "MODEL",
+          "unitUses": [],
+          "requiredUnitUses": [],
+          "anchorRefs": []
+        }
+      ]
+    }
+  ]
+}
